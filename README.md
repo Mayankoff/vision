@@ -14,37 +14,61 @@ See [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) for the phased plan.
 
 | Phase | State |
 |---|---|
-| 0 - Setup, protocol, splits | Done in code. **Still to do by the team:** request PURE + MMPD access, download UBFC-rPPG, set up the toolbox environment on a GPU machine, run `make_splits.py --check` on each dataset. |
-| 1 - Own classical pipeline | Implemented and tested on synthetic data. **Next:** run it on UBFC-rPPG (commands below). |
-| 2-7 | Not started. |
+| 0 - Setup, protocol, splits | Done in code. **Still to do by the team:** request PURE + MMPD access, download UBFC-rPPG, set up the toolbox environment, run `make_splits.py --check` on each dataset. |
+| 1 - Own classical pipeline | Implemented and tested on synthetic data. **Next:** run on UBFC-rPPG. |
+| 2 - Toolbox baselines, cross-check, ROI ablation | Implemented and tested end to end (both environments, Windows scripts) on synthetic data. **Next:** run on the real datasets. |
+| 3-7 | Not started. |
 
-## Setup
+## Setup (Windows)
 
-### 1. Our pipeline (Python ≥ 3.10, CPU is enough)
+Everything below is PowerShell, run from the repo root. Tested scripts are in `scripts\windows\`.
+Clone to a **short path** (e.g. `C:\vision`): Windows limits paths to 260 characters by default
+and the toolbox's cache paths are long.
+
+```powershell
+git clone --recurse-submodules https://github.com/mayankoff/vision.git C:\vision
+cd C:\vision
+```
+
+### 1. Our pipeline - Python 3.11, 3.12 or 3.13 (not 3.10), CPU is enough
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\windows\setup.ps1
+.venv\Scripts\Activate.ps1
+```
+
+This creates `.venv`, installs the pinned requirements and the `rppg` package, downloads the
+MediaPipe face model (3.7 MB, to `models\`) and runs the tests.
+
+### 2. rPPG-Toolbox environment - Python 3.8, needs Miniconda
+
+The toolbox needs Python 3.8 + PyTorch 2.1.2, which current MediaPipe does not support, so it
+gets its **own** conda environment; the two halves exchange files only. In an Anaconda
+PowerShell Prompt:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\windows\setup_toolbox_env.ps1        # NVIDIA GPU (CUDA 12.1)
+powershell -ExecutionPolicy Bypass -File scripts\windows\setup_toolbox_env.ps1 -Cpu   # no GPU: enough for Phase 2
+```
+
+The toolbox's `setup.sh` is bash-only and builds `mamba-ssm`, which only compiles on Linux +
+CUDA. The script skips it; `scripts\toolbox\stubs\mamba_ssm` stands in so the toolbox still
+imports (only PhysMamba, which is not in our plan, is unusable). The toolbox is pinned at commit
+`b7500b848f84ad7f86e277b4612563b69f4f88f9`.
+
+Never run the toolbox's `main.py` directly; use `scripts\toolbox\run_toolbox.py` (or the
+phase scripts), which handles the stub, Windows multiprocessing and repo-relative config paths.
+
+<details><summary>Linux / macOS</summary>
 
 ```bash
-# MediaPipe needs OpenGL ES / EGL libraries on Linux (preinstalled on most desktops):
-sudo apt-get install -y libegl1 libgles2
-
+sudo apt-get install -y libegl1 libgles2      # Linux only: MediaPipe needs EGL / GLES
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-pip install -e .
+pip install -r requirements.txt && pip install -e .
+cd external/rPPG-Toolbox && bash setup.sh conda   # toolbox env (Linux builds mamba-ssm too)
 ```
-
-The MediaPipe face-landmarker model (`models/face_landmarker.task`, 3.7 MB) is downloaded
-automatically on first use.
-
-### 2. rPPG-Toolbox (separate environment, Phase 3)
-
-The toolbox is a git submodule pinned at commit `b7500b848f84ad7f86e277b4612563b69f4f88f9`.
-It needs Python 3.8 + CUDA (PyTorch 2.1.2, mamba-ssm), which is incompatible with current
-MediaPipe, so it lives in **its own environment**. The two halves exchange files only.
-
-```bash
-git submodule update --init
-cd external/rPPG-Toolbox
-bash setup.sh conda        # or: bash setup.sh uv
-```
+Then use the Python commands under "Usage" directly.
+</details>
 
 ## Data
 
@@ -52,9 +76,9 @@ Raw datasets go under `data/` (gitignored), in the same layout rPPG-Toolbox expe
 copy serves both codebases:
 
 ```
-data/UBFC-rPPG/subject1/{vid.avi, ground_truth.txt} ...          # DATASET_2, open download
-data/PURE/01-01/{01-01/Image*.png, 01-01.json} ...                # request form, TU Ilmenau
-data/MMPD/subject1/{p1_0.mat, p1_1.mat, ...} ...                  # licence agreement; ask for mini-MMPD
+data\UBFC-rPPG\subject1\{vid.avi, ground_truth.txt} ...         # DATASET_2, open download
+data\PURE\01-01\{01-01\Image*.png, 01-01.json} ...              # request form, TU Ilmenau
+data\MMPD\subject1\{p1_0.mat, p1_1.mat, ...} ...                 # licence agreement; ask for mini-MMPD
 ```
 
 | Dataset | Access |
@@ -65,37 +89,69 @@ data/MMPD/subject1/{p1_0.mat, p1_1.mat, ...} ...                  # licence agre
 
 ## Usage
 
-### Single video (offline prototype)
+### Quickest real test: your own face
 
-```bash
-rppg path/to/video.avi                                   # POS on forehead + cheeks
-rppg video.avi --method chrom --plot pulse.png --debug-video rois.mp4
+Record ~30 s of your face with a phone or webcam (good light, sit still), ideally while wearing a
+smartwatch or pulse oximeter to compare against, then:
+
+```powershell
+rppg my_face.mp4 --plot pulse.png --debug-video rois.mp4
+python scripts\figure_pipeline.py my_face.mp4 --out fig_pipeline.png    # report figure, stage by stage
 ```
 
-### Phase 1 on a dataset
+### Phase 1 - our classical pipeline on a dataset
 
-```bash
-# 1. Face landmarks + ROI averaging (slow, ~10-30 ms/frame; resumable; run once per dataset)
-python scripts/extract_traces.py ubfc data/UBFC-rPPG --out cache/traces/ubfc --workers 4
-
-# 2. All classical methods x ROIs, scored with the frozen protocol (seconds)
-python scripts/run_classical.py cache/traces/ubfc --out results/classical/ubfc --window 10
-
-# Test subjects only (to compare with the deep models later):
-python scripts/run_classical.py cache/traces/ubfc --split splits/ubfc.json --subset test --out results/classical/ubfc_test
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\windows\run_phase1.ps1 -Dataset ubfc   # add -DebugVideos for ROI overlays
 ```
 
-`run_classical.py` writes a per-video CSV (predicted/GT HR, SNR, runtime, dataset labels) and
-a summary CSV (MAE, RMSE, MAPE, Pearson, SNR per method and ROI). The `face_box` ROI is the
-toolbox-style enlarged face crop, so the Phase 2 ROI ablation is already in these outputs.
+which runs:
 
-Add `--debug-videos cache/debug/ubfc` to step 1 to save ROI-overlay videos for the report.
+```powershell
+# 1. face landmarks + ROI averaging (slow, ~10-30 ms/frame per worker; resumable; once per dataset)
+python scripts\extract_traces.py ubfc data\UBFC-rPPG --out cache\traces\ubfc --workers 4
+# 2. every classical method x every ROI, scored with the frozen protocol (seconds)
+python scripts\run_classical.py cache\traces\ubfc --out results\classical\ubfc --window 10
+# 3. the same on the test subjects only (to compare with the deep models in Phase 3)
+python scripts\run_classical.py cache\traces\ubfc --split splits\ubfc.json --subset test --out results\classical\ubfc_test
+```
+
+### Phase 2 - toolbox baselines, cross-check, ROI ablation
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\windows\run_phase2.ps1                    # every dataset present in data\
+powershell -ExecutionPolicy Bypass -File scripts\windows\run_phase2.ps1 -Datasets ubfc     # just one
+```
+
+For each dataset it runs Phase 1 if needed, then:
+
+```powershell
+# toolbox environment: toolbox preprocessing (Haar-cascade face crop) + its 7 classical methods, per-video outputs
+conda run -n rppg-toolbox python scripts\toolbox\dump_unsupervised.py --config_file configs\toolbox\UBFC-rPPG_UNSUPERVISED.yaml
+# our environment: re-score them with OUR protocol, same CSV format as run_classical.py
+python scripts\score_predictions.py cache\toolbox\predictions\UBFC-rPPG --out results\toolbox\ubfc
+# tables + figures
+python scripts\phase2_report.py results\classical\ubfc_per_video.csv results\toolbox\ubfc_per_video.csv --out results\phase2
+```
+
+`results\phase2\REPORT.md` contains: (1) all methods - ours on the skin ROI and on a face box,
+and the toolbox's 7 methods - on every dataset; (2) a video-by-video cross-check of our GREEN /
+ICA / CHROM / POS against the toolbox's (median HR difference, % within 3 BPM, paired Wilcoxon
+test on absolute errors); (3) the ROI ablation - forehead, each cheek, all skin, face box - with
+paired tests against the skin ROI.
+
+Notes:
+- The toolbox's stock MMPD config evaluates only a subset (stationary, skin type 3, no exercise,
+  no natural light); the toolbox paper's MMPD numbers are on that subset. Our config uses **all**
+  MMPD videos, for the Phase 4 condition analysis.
+- The toolbox names MMPD outputs by subject + condition labels (not video index), so MMPD
+  videos are matched between the codebases on those labels.
+- The first toolbox run per dataset caches face crops in `cache\toolbox\preprocessed`; later runs reuse them.
 
 ### Splits
 
-```bash
-python scripts/make_splits.py                                  # already done; files in splits/
-python scripts/make_splits.py --check ubfc data/UBFC-rPPG      # verify against the data on disk
+```powershell
+python scripts\make_splits.py --check ubfc data\UBFC-rPPG      # verify against the data on disk (do this first)
 ```
 
 Subject-independent, ~70/15/15, seed 2025: UBFC 30/6/6, PURE 6/2/2, MMPD 23/5/5 subjects.
@@ -103,10 +159,13 @@ Do not regenerate after experiments start.
 
 ### Smoke test without real data
 
-```bash
-python scripts/make_synthetic_dataset.py face.jpg --out cache/synthetic-ubfc
-python scripts/extract_traces.py ubfc cache/synthetic-ubfc --out cache/traces/synthetic
-python scripts/run_classical.py cache/traces/synthetic --out cache/results/synthetic
+Builds a UBFC-format dataset from one face photo with known heart rates; `--hard` adds lighting
+flicker, a weaker pulse and more head motion so the methods separate.
+
+```powershell
+python scripts\make_synthetic_dataset.py face.jpg --out cache\synthetic --hard --duration 30 --hrs 52,61,67,74,80,88,95,103,118,135
+python scripts\extract_traces.py ubfc cache\synthetic --out cache\traces\synthetic --workers 4
+python scripts\run_classical.py cache\traces\synthetic --out cache\results\synthetic
 ```
 
 ## Evaluation protocol
@@ -124,14 +183,14 @@ method:
 | Metrics | MAE, RMSE, MAPE, Pearson r over per-video HR; SNR (dB) averaged over videos |
 | SNR | power within ±6 BPM of GT HR and its 1st harmonic vs. rest of band (as rPPG-Toolbox) |
 
-The toolbox's own post-processing hard-codes a 0.6-3.3 Hz band, so in Phase 2/3 toolbox
-outputs will be re-scored with `rppg.protocol` rather than used as-is.
+The toolbox's own post-processing hard-codes a 0.6-3.3 Hz band, so toolbox outputs are
+re-scored with `rppg.protocol` (`scripts/score_predictions.py`) rather than used as-is.
 
 ## Tests
 
-```bash
-pytest                                              # 65 fast tests, ~3 s
-RPPG_FACE_IMAGE=face.jpg pytest -m slow             # end-to-end through MediaPipe on a synthetic pulsing face
+```powershell
+pytest                                              # 67 fast tests, ~3 s
+$env:RPPG_FACE_IMAGE="face.jpg"; pytest -m slow     # end-to-end through MediaPipe on a synthetic pulsing face
 ```
 
 The tests check each method recovers known heart rates (45-170 BPM) from synthetic RGB traces,
@@ -150,10 +209,15 @@ src/rppg/
   signal/methods.py    Block 5A - GREEN, ICA, CHROM, POS
   signal/hr.py         Block 7  - FFT and peak-detection HR
   eval/metrics.py      Block 9  - MAE, RMSE, MAPE, Pearson, SNR
+  eval/plotstyle.py    shared figure style (colour-blind-safe palette)
   pipeline.py          trace extraction (cached) + estimation
   synth.py             synthetic traces / videos with known HR
   cli.py               `rppg` command
-scripts/               make_splits, extract_traces, run_classical, make_synthetic_dataset
+scripts/               make_splits, extract_traces, run_classical, score_predictions, phase2_report,
+                       figure_pipeline, make_synthetic_dataset
+scripts/toolbox/       run in the TOOLBOX env: dump_unsupervised, run_toolbox (main.py wrapper), mamba stub
+scripts/windows/       PowerShell: setup, setup_toolbox_env, run_phase1, run_phase2
+configs/toolbox/       our toolbox configs (repo-relative paths)
 splits/                fixed subject splits (committed)
 external/rPPG-Toolbox  pinned submodule
 ```

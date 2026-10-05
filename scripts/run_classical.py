@@ -20,7 +20,8 @@ import numpy as np
 import pandas as pd
 
 from rppg.eval.metrics import snr_db, summarize
-from rppg.pipeline import Traces, estimate, reference_hr, windowed_pair
+from rppg.io.datasets import mmpd_canonical_labels
+from rppg.pipeline import TRACE_NAMES, Traces, estimate, reference_hr, windowed_pair
 from rppg.signal.methods import METHODS
 
 
@@ -29,7 +30,7 @@ def main() -> None:
     ap.add_argument("traces", help="directory of .npz files from extract_traces.py")
     ap.add_argument("--out", required=True, help="output prefix, e.g. results/classical/ubfc")
     ap.add_argument("--methods", default=",".join(METHODS), help=f"comma-separated, from {list(METHODS)}")
-    ap.add_argument("--rois", default="skin,face_box")
+    ap.add_argument("--rois", default=",".join(TRACE_NAMES), help="default: every ROI (for the Phase 2 ablation)")
     ap.add_argument("--split", help="splits/<dataset>.json; with --subset, evaluate only those subjects")
     ap.add_argument("--subset", choices=["train", "val", "test"])
     ap.add_argument("--window", type=float, help="also score HR per window of this many seconds")
@@ -40,7 +41,8 @@ def main() -> None:
         keep = {str(s) for s in json.loads(Path(args.split).read_text())[args.subset]}
         files = [f for f in files if str(int(Traces.load(f).meta["subject"])) in keep]
     if not files:
-        raise SystemExit("no trace files to evaluate")
+        detail = f" for the {args.subset} subjects in {args.split} (wrong dataset, or traces not extracted?)" if args.subset else ""
+        raise SystemExit(f"no trace files to evaluate in {args.traces}{detail}")
 
     methods, rois = args.methods.split(","), args.rois.split(",")
     rows, win_rows = [], []
@@ -48,7 +50,10 @@ def main() -> None:
         tr = Traces.load(f)
         meta = tr.meta
         gt_clean, gt_fft, gt_peak = reference_hr(np.asarray(meta["gt_bvp"]), tr.fps)
-        labels = {k: v for k, v in meta.items() if k.startswith("label_")}
+        labels = {k[6:]: v for k, v in meta.items() if k.startswith("label_")}
+        if meta["dataset"] == "MMPD":
+            labels = mmpd_canonical_labels(labels)
+        labels = {f"label_{k}": v for k, v in labels.items()}
         for roi in rois:
             rgb, fs = tr.signal(roi)
             for m in methods:
@@ -60,6 +65,7 @@ def main() -> None:
                         "dataset": meta["dataset"],
                         "id": meta["id"],
                         "subject": meta["subject"],
+                        "impl": "ours",
                         "method": m,
                         "roi": roi,
                         "hr_pred": res.hr_fft,

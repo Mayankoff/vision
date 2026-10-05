@@ -61,14 +61,17 @@ def synthetic_face_video(
     pulse_strength: float = 0.01,
     jitter_px: float = 1.5,
     noise_std: float = 1.0,
+    flicker_hz: float | None = None,
+    flicker_strength: float = 0.02,
     seed: int = 0,
 ):
     """Yield frames of a still face photo whose skin pixels pulse at ``hr_bpm``.
 
     Small random translations and sensor noise are added so the pipeline has
-    to track the face rather than read a perfectly static image. Returns a
-    generator; the ground-truth pulse is available via :func:`pulse_wave`
-    with the same arguments.
+    to track the face rather than read a perfectly static image. An optional
+    brightness flicker (e.g. mains-powered or screen lighting) modulates the
+    whole frame. Returns a generator; the ground-truth pulse is available via
+    :func:`pulse_wave` with the same arguments.
     """
     rng = np.random.default_rng(seed)
     n = int(duration_s * fps)
@@ -80,6 +83,8 @@ def synthetic_face_video(
     for i in range(n):
         frame = base.copy()
         frame[skin_mask] *= gain[i]
+        if flicker_hz:
+            frame *= 1.0 + flicker_strength * np.sin(2 * np.pi * flicker_hz * t[i])
         dx, dy = rng.normal(0, jitter_px, 2)
         m = np.float32([[1, 0, dx], [0, 1, dy]])
         frame = cv2.warpAffine(frame, m, (w, h), borderMode=cv2.BORDER_REFLECT)

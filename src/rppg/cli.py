@@ -12,7 +12,7 @@ import time
 import numpy as np
 
 from rppg.face.landmarker import FaceLandmarker
-from rppg.io.datasets import iter_video, video_fps
+from rppg.io.datasets import downscale, iter_video, video_fps
 from rppg.pipeline import TRACE_NAMES, estimate, extract_traces
 from rppg.signal.hr import power_spectrum, windowed_hr
 from rppg.signal.methods import METHODS
@@ -50,12 +50,13 @@ def main(argv=None) -> None:
     ap.add_argument("--plot", help="save waveform / spectrum / HR-over-time figure here")
     ap.add_argument("--debug-video", help="save a video with ROI overlays here")
     ap.add_argument("--model", help="path to face_landmarker.task (downloaded if missing)")
+    ap.add_argument("--max-side", type=int, default=720, help="downscale larger frames to this size (0 = never)")
     args = ap.parse_args(argv)
 
     fps = args.fps or video_fps(args.video)
     t0 = time.perf_counter()
     with FaceLandmarker(args.model) as lm:
-        traces = extract_traces(iter_video(args.video), fps, lm, debug_video=args.debug_video)
+        traces = extract_traces(downscale(iter_video(args.video), args.max_side), fps, lm, debug_video=args.debug_video)
     t1 = time.perf_counter()
     rgb, fs = traces.signal(args.roi)
     result = estimate(rgb, fs, args.method)

@@ -148,7 +148,12 @@ class PulseResult:
 def estimate(rgb: np.ndarray, fs: float, method: str = "pos", band=PROTOCOL.hr_band) -> PulseResult:
     """Blocks 5A-7: RGB trace -> rPPG method -> common post-processing -> HR."""
     raw = METHODS[method](np.asarray(rgb, dtype=np.float64), fs, band=band)
-    bvp = postprocess_pulse(raw, fs, band)
+    return score_raw_pulse(raw, fs, band)
+
+
+def score_raw_pulse(raw: np.ndarray, fs: float, band=PROTOCOL.hr_band) -> PulseResult:
+    """Blocks 6-7 for any raw pulse signal - ours, or one predicted by rPPG-Toolbox."""
+    bvp = postprocess_pulse(np.asarray(raw, dtype=np.float64), fs, band)
     return PulseResult(bvp=bvp, fs=fs, hr_fft=estimate_hr(bvp, fs, "fft", band), hr_peak=estimate_hr(bvp, fs, "peak", band))
 
 

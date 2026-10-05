@@ -1,0 +1,53 @@
+# Phase 2 - rPPG-Toolbox classical (unsupervised) methods on MMPD.
+# Run from the repo root in the TOOLBOX environment:
+#   python scripts/toolbox/dump_unsupervised.py --config_file configs/toolbox/MMPD_UNSUPERVISED.yaml
+# Paths are relative to the repo root (rewritten to absolute by scripts/toolbox/toolbox_env.py).
+# Metrics printed by the toolbox itself are NOT used; predictions are re-scored with
+# src/rppg/protocol.py by scripts/score_predictions.py.
+BASE: ['']
+TOOLBOX_MODE: "unsupervised_method"
+UNSUPERVISED:
+  METHOD: ["ICA", "POS", "CHROM", "GREEN", "LGI", "PBV", "OMIT"]
+  METRICS: ['MAE', 'RMSE', 'MAPE', 'Pearson', 'SNR']
+  DATA:
+    INFO:              # ALL conditions (the toolbox's stock MMPD config evaluates only a subset)
+      LIGHT: [1, 2, 3, 4]      # 1 LED-low, 2 LED-high, 3 Incandescent, 4 Nature
+      MOTION: [1, 2, 3, 4]     # 1 Stationary, 2 Rotation, 3 Talking, 4 Walking
+      EXERCISE: [1, 2]         # 1 True, 2 False
+      SKIN_COLOR: [3, 4, 5, 6] # Fitzpatrick types present in MMPD
+      GENDER: [1, 2]
+      GLASSER: [1, 2]
+      HAIR_COVER: [1, 2]
+      MAKEUP: [1, 2]
+    FS: 30
+    DATASET: MMPD
+    DO_PREPROCESS: True        # face-crops and caches the videos; set False after the first run
+    DATA_FORMAT: NDHWC
+    DATA_PATH: "data/MMPD"
+    CACHED_PATH: "cache/toolbox/preprocessed"
+    EXP_DATA_NAME: "MMPD_HC72_raw"   # short on purpose: the toolbox's default name can push Windows paths past 260 chars
+    BEGIN: 0.0
+    END: 1.0
+    PREPROCESS:
+      DATA_TYPE: ['Raw']
+      DATA_AUG: ['None']
+      LABEL_TYPE: Raw
+      DO_CHUNK: False
+      CHUNK_LENGTH: 180
+      CROP_FACE:
+        DO_CROP_FACE: True
+        BACKEND: 'HC'          # Haar cascade
+        USE_LARGE_FACE_BOX: True
+        LARGE_BOX_COEF: 1.5
+        DETECTION:
+          DO_DYNAMIC_DETECTION: False
+          DYNAMIC_DETECTION_FREQUENCY: 30
+          USE_MEDIAN_FACE_BOX: False
+      RESIZE:
+        H: 72
+        W: 72
+INFERENCE:
+  EVALUATION_METHOD: "FFT"
+  EVALUATION_WINDOW:
+    USE_SMALLER_WINDOW: False
+    WINDOW_SIZE: 10

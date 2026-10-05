@@ -47,6 +47,9 @@ def main() -> None:
     ap.add_argument("--duration", type=float, default=20.0)
     ap.add_argument("--fps", type=float, default=30.0)
     ap.add_argument("--max-side", type=int, default=480, help="downscale the photo to this size")
+    ap.add_argument("--hard", action="store_true",
+                    help="weaker pulse, more jitter and noise, and a lighting flicker at a random rate per subject")
+    ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()
 
     face = cv2.cvtColor(cv2.imread(args.face), cv2.COLOR_BGR2RGB)
@@ -55,16 +58,25 @@ def main() -> None:
         face = cv2.resize(face, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
     mask = face_skin_mask(face)
 
+    rng = np.random.default_rng(args.seed)
     for i, hr in enumerate(float(h) for h in args.hrs.split(",")):
         d = Path(args.out) / f"subject{i + 1}"
         d.mkdir(parents=True, exist_ok=True)
         h, w = face.shape[:2]
         writer = open_writer(d / "vid.avi", args.fps, (w, h))
-        for frame in synthetic_face_video(face, mask, hr, args.fps, args.duration, seed=i):
+        if args.hard:
+            # Flicker well away from the true HR, strong enough to dominate a single colour channel.
+            flicker = rng.choice([f for f in np.arange(0.8, 2.9, 0.1) if abs(f * 60 - hr) > 15])
+            opts = dict(pulse_strength=0.004, jitter_px=3.0, noise_std=2.0, flicker_hz=float(flicker),
+                        flicker_strength=0.015)
+            print(f"  subject{i + 1}: flicker at {flicker * 60:.0f} BPM-equivalent")
+        else:
+            opts = {}
+        for frame in synthetic_face_video(face, mask, hr, args.fps, args.duration, seed=args.seed + i, **opts):
             writer.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
         writer.release()
         t = np.arange(int(args.duration * args.fps)) / args.fps
-        bvp = pulse_wave(t, hr, rng=np.random.default_rng(i))
+        bvp = pulse_wave(t, hr, rng=np.random.default_rng(args.seed + i))
         with open(d / "ground_truth.txt", "w") as f:  # UBFC DATASET_2 layout: BVP, HR, time
             f.write(" ".join(f"{v:.6e}" for v in bvp) + "\n")
             f.write(" ".join(f"{hr:.6e}" for _ in t) + "\n")

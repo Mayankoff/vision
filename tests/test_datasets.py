@@ -74,3 +74,11 @@ def test_mmpd_loader_reads_labels_and_float_video(tmp_path):
     frames = list(rec.frames())
     assert frames[0].dtype == np.uint8 and frames[0].max() > 1
     np.testing.assert_allclose(rec.bvp, np.arange(5.0))
+
+
+def test_downscale_limits_longer_side():
+    from rppg.io.datasets import downscale
+
+    frames = [np.zeros((1080, 1920, 3), np.uint8), np.zeros((300, 200, 3), np.uint8)]
+    out = list(downscale(iter(frames), 720))
+    assert out[0].shape == (405, 720, 3) and out[1].shape == (300, 200, 3)

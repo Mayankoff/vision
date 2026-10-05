@@ -21,7 +21,9 @@ organised so that every promise in the report maps to a deliverable:
 | Phase | Status |
 |---|---|
 | 0 | Code side done: repo skeleton, toolbox submodule pinned (`b7500b8`), pinned requirements, frozen protocol (`src/rppg/protocol.py`), fixed splits (`splits/*.json`). Remaining (team): dataset access/downloads, toolbox env on a GPU machine, `make_splits.py --check` per dataset. |
-| 1 | Pipeline implemented (all of Blocks 1–4, 5A, 6–9) with 67 tests incl. an end-to-end MediaPipe test on synthetic video. Remaining: run on UBFC-rPPG and check the exit criterion. |
+| 1 | Pipeline implemented (all of Blocks 1–4, 5A, 6–9), tested incl. an end-to-end MediaPipe test on synthetic video. Remaining: run on UBFC-rPPG and check the exit criterion. |
+| 2 | Implemented and run end to end on a synthetic dataset in both environments: toolbox per-video outputs (`scripts/toolbox/dump_unsupervised.py`), re-scoring with our protocol (`score_predictions.py`), cross-check + ROI ablation report with figures (`phase2_report.py`), pipeline figure (`figure_pipeline.py`), Windows PowerShell runners. Remaining: run on the real datasets. |
+| Windows | Supported: PowerShell setup/run scripts; toolbox runs without mamba-ssm (stub) and with Windows "spawn" multiprocessing; short toolbox cache names to stay under the 260-char path limit. |
 
 ---
 
@@ -157,7 +159,9 @@ cross-check of our implementation.
 
 Tasks
 - [ ] Write toolbox configs for the unsupervised methods (ICA, POS, CHROM, GREEN;
-      LGI/PBV are free extras) on each dataset.
+      LGI/PBV are free extras) on each dataset. Note: the toolbox's stock MMPD config
+      evaluates only a subset (stationary, skin type 3, no exercise, no natural light);
+      ours uses every MMPD video.
 - [ ] Turn on saving of test outputs and write `scripts/collect_results.py` that
       converts the toolbox outputs into the **same per-video CSV format** as Phase 1.
 - [ ] Run our own pipeline on PURE and MMPD too (loaders for PURE's PNG frames +

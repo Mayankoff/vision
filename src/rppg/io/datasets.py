@@ -91,6 +91,20 @@ def iter_video(path: str) -> Iterator[np.ndarray]:
         cap.release()
 
 
+def downscale(frames: Iterator[np.ndarray], max_side: int | None) -> Iterator[np.ndarray]:
+    """Shrink frames whose longer side exceeds ``max_side`` (phone videos are often 1080p/4K).
+
+    ROI averaging is unaffected by resolution, and MediaPipe is much faster on
+    smaller frames.
+    """
+    for f in frames:
+        h, w = f.shape[:2]
+        if max_side and max(h, w) > max_side:
+            s = max_side / max(h, w)
+            f = cv2.resize(f, (round(w * s), round(h * s)), interpolation=cv2.INTER_AREA)
+        yield f
+
+
 def video_fps(path: str, default: float = 30.0) -> float:
     cap = cv2.VideoCapture(path)
     fps = cap.get(cv2.CAP_PROP_FPS)
@@ -182,6 +196,51 @@ def load_pure(root: str) -> list[Recording]:
 # -------------------------------------------------------------------------- MMPD
 
 MMPD_FIELDS = ("light", "motion", "exercise", "skin_color", "gender", "glasser", "hair_cover", "makeup")
+
+# Integer codes used by rPPG-Toolbox for MMPD labels (its file names look like
+# subject5_L1_MO2_E2_S3_GE1_GL2_H2_MA2). Index = code; used to match videos
+# between the two codebases and to give labels one canonical spelling.
+MMPD_CODES = {
+    "light": {"LED-low": 1, "LED-high": 2, "Incandescent": 3, "Nature": 4},
+    "motion": {"Stationary": 1, "Stationary (after exercise)": 1, "Rotation": 2, "Talking": 3, "Walking": 4,
+               "Watching Videos": 4},  # 'Watching Videos' is an old mislabel of 'Walking'
+    "exercise": {"True": 1, "False": 2},
+    "gender": {"male": 1, "female": 2},
+    "glasser": {"True": 1, "False": 2},
+    "hair_cover": {"True": 1, "False": 2},
+    "makeup": {"True": 1, "False": 2},
+}
+_TOOLBOX_TAGS = {"L": "light", "MO": "motion", "E": "exercise", "S": "skin_color", "GE": "gender", "GL": "glasser",
+                 "H": "hair_cover", "MA": "makeup"}
+
+
+def mmpd_canonical_labels(meta: dict) -> dict[str, str]:
+    """Labels with one spelling per condition (e.g. 'Stationary (after exercise)' -> 'Stationary')."""
+    out = {}
+    for field in MMPD_FIELDS:
+        if field not in meta:
+            continue
+        value = str(meta[field])
+        if field in MMPD_CODES:
+            code = MMPD_CODES[field][value]
+            value = next(k for k, v in MMPD_CODES[field].items() if v == code)
+        out[field] = value
+    return out
+
+
+def parse_toolbox_mmpd_name(name: str) -> tuple[str, dict[str, str]]:
+    """'subject5_L1_MO2_E2_S3_GE1_GL2_H2_MA2' -> ('5', canonical labels)."""
+    parts = name.split("_")
+    subject = re.search(r"\d+", parts[0]).group(0)
+    labels = {}
+    for part in parts[1:]:
+        tag, code = re.match(r"([A-Z]+)(\d+)", part).groups()
+        field = _TOOLBOX_TAGS[tag]
+        if field == "skin_color":
+            labels[field] = code
+        else:
+            labels[field] = next(k for k, v in MMPD_CODES[field].items() if v == int(code))
+    return subject, labels
 
 
 def _mat_str(v) -> str:

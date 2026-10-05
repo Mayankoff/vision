@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "rppg"
 version = "0.1.0"
 description = "Contactless heart-rate estimation from facial video (rPPG) - BCSE417L Machine Vision project"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "numpy>=1.24",
     "scipy>=1.10",

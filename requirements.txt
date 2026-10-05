@@ -1,4 +1,4 @@
-# Our pipeline (Phases 1, 2, 4-7). Tested with Python 3.11.
+# Our pipeline (Phases 1, 2, 4-7). Python 3.11-3.13 (Windows wheels checked for all three; numpy 2.4 has none for 3.10).
 # rPPG-Toolbox (deep models, Phase 3) needs its OWN environment: see README.
 numpy==2.4.6
 scipy==1.17.1

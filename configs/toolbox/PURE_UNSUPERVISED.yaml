@@ -1,0 +1,44 @@
+# Phase 2 - rPPG-Toolbox classical (unsupervised) methods on PURE.
+# Run from the repo root in the TOOLBOX environment:
+#   python scripts/toolbox/dump_unsupervised.py --config_file configs/toolbox/PURE_UNSUPERVISED.yaml
+# Paths are relative to the repo root (rewritten to absolute by scripts/toolbox/toolbox_env.py).
+# Metrics printed by the toolbox itself are NOT used; predictions are re-scored with
+# src/rppg/protocol.py by scripts/score_predictions.py.
+BASE: ['']
+TOOLBOX_MODE: "unsupervised_method"
+UNSUPERVISED:
+  METHOD: ["ICA", "POS", "CHROM", "GREEN", "LGI", "PBV", "OMIT"]
+  METRICS: ['MAE', 'RMSE', 'MAPE', 'Pearson', 'SNR']
+  DATA:
+    FS: 30
+    DATASET: PURE
+    DO_PREPROCESS: True        # face-crops and caches the videos; set False after the first run
+    DATA_FORMAT: NDHWC
+    DATA_PATH: "data/PURE"
+    CACHED_PATH: "cache/toolbox/preprocessed"
+    EXP_DATA_NAME: "PURE_HC72_raw"   # short on purpose: the toolbox's default name can push Windows paths past 260 chars
+    BEGIN: 0.0
+    END: 1.0
+    PREPROCESS:
+      DATA_TYPE: ['Raw']
+      DATA_AUG: ['None']
+      LABEL_TYPE: Raw
+      DO_CHUNK: False
+      CHUNK_LENGTH: 180
+      CROP_FACE:
+        DO_CROP_FACE: True
+        BACKEND: 'HC'          # Haar cascade
+        USE_LARGE_FACE_BOX: True
+        LARGE_BOX_COEF: 1.5
+        DETECTION:
+          DO_DYNAMIC_DETECTION: False
+          DYNAMIC_DETECTION_FREQUENCY: 30
+          USE_MEDIAN_FACE_BOX: False
+      RESIZE:
+        H: 72
+        W: 72
+INFERENCE:
+  EVALUATION_METHOD: "FFT"
+  EVALUATION_WINDOW:
+    USE_SMALLER_WINDOW: False
+    WINDOW_SIZE: 10
