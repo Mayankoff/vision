@@ -1,0 +1,10 @@
+# Our pipeline (Phases 1, 2, 4-7). Tested with Python 3.11.
+# rPPG-Toolbox (deep models, Phase 3) needs its OWN environment: see README.
+numpy==2.4.6
+scipy==1.17.1
+scikit-learn==1.9.1
+opencv-python-headless==5.0.0.93
+mediapipe==1.0.1
+pandas==3.0.6
+matplotlib==3.11.2
+pytest==9.1.1

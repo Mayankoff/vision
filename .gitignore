@@ -1,0 +1,13 @@
+# environments
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+
+# large / generated data - never commit datasets, caches or model weights
+data/
+cache/
+models/*.task
+results/**/debug/
+*.mp4
+*.avi

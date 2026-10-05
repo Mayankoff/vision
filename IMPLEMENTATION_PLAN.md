@@ -16,6 +16,13 @@ organised so that every promise in the report maps to a deliverable:
 | Accuracy-vs-efficiency trade-off (latency, FPS, params, memory) | Phase 5 |
 | Reproducible protocol | Phase 0 (pinned env, fixed splits), Phase 7 |
 
+## Progress
+
+| Phase | Status |
+|---|---|
+| 0 | Code side done: repo skeleton, toolbox submodule pinned (`b7500b8`), pinned requirements, frozen protocol (`src/rppg/protocol.py`), fixed splits (`splits/*.json`). Remaining (team): dataset access/downloads, toolbox env on a GPU machine, `make_splits.py --check` per dataset. |
+| 1 | Pipeline implemented (all of Blocks 1–4, 5A, 6–9) with 67 tests incl. an end-to-end MediaPipe test on synthetic video. Remaining: run on UBFC-rPPG and check the exit criterion. |
+
 ---
 
 ## Guiding decisions
@@ -46,7 +53,7 @@ organised so that every promise in the report maps to a deliverable:
 vision/
 ├── IMPLEMENTATION_PLAN.md
 ├── README.md                  # setup + how to reproduce every table
-├── environment.yml            # pinned versions (python, torch, mediapipe, opencv, scipy…)
+├── requirements.txt           # pinned versions for our pipeline (toolbox has its own env)
 ├── external/rPPG-Toolbox/     # git submodule, pinned to a specific commit
 ├── configs/toolbox/           # our YAML configs for the toolbox (one per experiment)
 ├── splits/                    # fixed subject-ID splits as JSON (committed)
@@ -79,9 +86,9 @@ Tasks
       smaller than full resolution). Download UBFC-rPPG (DATASET_2).
 - [ ] Create the repo skeleton above; add rPPG-Toolbox as a submodule and **record the
       commit hash** in the README.
-- [ ] Build the environment following the toolbox's `setup.sh`, then add our extras
-      (mediapipe, pytest, pandas, seaborn, thop/fvcore). Pin everything in
-      `environment.yml`.
+- [ ] Build **two environments**: the toolbox's (Python 3.8 + CUDA via its `setup.sh`)
+      and ours (Python ≥ 3.10, `requirements.txt`). Current MediaPipe doesn't support
+      Python 3.8, so they can't be merged; they exchange files only.
 - [ ] Secure GPU compute (lab GPU, Colab, or Kaggle). Measure disk space: the toolbox
       caches preprocessed clips, which can be tens of GB per dataset/config.
 - [ ] **Freeze the evaluation protocol** in `README.md` (see "Evaluation protocol" below).
@@ -104,9 +111,9 @@ Tasks
 1. **Block 1 — Input.** `io/`: frame reader (OpenCV) returning frames + timestamps;
    UBFC loader that also parses `ground_truth.txt` (BVP, HR, timestamps).
 2. **Block 2 — Face detection.** `face/landmarker.py`: wrap MediaPipe face landmarks.
-   Note: the legacy `mp.solutions.face_mesh` API (468 landmarks) is being superseded
-   by the Tasks `FaceLandmarker` API (478 landmarks incl. iris); pick one, pin the
-   mediapipe version, and keep the wrapper interface stable. Handle missed detections
+   The legacy `mp.solutions.face_mesh` API is no longer shipped in current mediapipe,
+   so use the Tasks `FaceLandmarker` API (478 landmarks incl. iris); pin the
+   mediapipe version and keep the wrapper interface stable. Handle missed detections
    (reuse last landmarks for ≤ N frames, otherwise flag the frame).
 3. **Block 3 — ROI extraction.** `face/roi.py`: landmark-index polygons for forehead,
    left cheek, right cheek; `cv2.fillPoly` masks; exclude eyes/brows/lips/nostrils.
@@ -133,7 +140,7 @@ Tasks
    runtime).
 
 Deliverables
-- Offline prototype: `python -m rppg.cli video.avi` prints BPM and plots the pulse.
+- Offline prototype: `rppg video.avi` prints BPM and plots the pulse.
 - First results table: GREEN / ICA / CHROM / POS on UBFC-rPPG (our implementation).
 
 Exit criteria
@@ -308,7 +315,7 @@ Tasks
 
 | Item | Decision to record |
 |---|---|
-| HR frequency band | One band for every method, e.g. 0.7–3.0 Hz (42–180 BPM) as in the report. The toolbox's default post-processing band is narrower, so set it explicitly in every config. |
+| HR frequency band | One band for every method: 0.7–3.0 Hz (42–180 BPM) as in the report. The toolbox's post-processing band is hard-coded (0.6–3.3 Hz at the pinned commit), so toolbox outputs are re-scored with our own code (`src/rppg/protocol.py`). |
 | Evaluation window | Whole-video HR (simplest, matches most papers), and optionally 10 s / 30 s windows for a secondary table. Same choice for every method. |
 | HR estimator | FFT peak as primary; peak-detection HR as a secondary column. |
 | Ground-truth HR | Derived from the reference BVP with the same estimator and window as the prediction (not the device's displayed HR). |
@@ -354,8 +361,9 @@ Swap freely; the point is that Tracks A and B can progress in parallel after Pha
 2. **"Same preprocessed data" for both branches.** Classical methods consume RGB
    traces; DL models consume cropped frame clips. The accurate claim is "same
    videos, same splits, same face crops where applicable, same HR post-processing".
-3. **MMPD skin-tone range.** The report says Fitzpatrick I–VI; check the MMPD paper
-   and metadata (I believe it covers types III–VI) and correct if needed.
+3. **MMPD skin-tone range.** The report says Fitzpatrick I–VI, but MMPD covers types
+   III–VI only (rPPG-Toolbox's MMPD loader rejects any other skin-colour label).
+   Correct this in the report; the skin-tone analysis in Phase 4 is over types 3–6.
 4. **POS citation year.** The literature survey says Wang et al., 2017, the reference
    list says 2016. The IEEE TBME 64(7) issue is 2017; make them consistent.
 5. **Literature numbers need a protocol label.** E.g. "PhysNet ~0.58 BPM MAE on
