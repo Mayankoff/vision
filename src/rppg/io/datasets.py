@@ -78,9 +78,17 @@ class Recording:
 
 def iter_video(path: str) -> Iterator[np.ndarray]:
     """Yield RGB frames of a video file."""
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"video not found: {os.path.abspath(path)}")
     cap = cv2.VideoCapture(path)
-    if not cap.isOpened():
-        raise IOError(f"cannot open video {path}")
+    if not cap.isOpened() or not cap.grab():
+        raise IOError(
+            f"OpenCV cannot decode {path}. Phone videos are often HEVC/H.265, which OpenCV usually "
+            "cannot read: record in H.264 (iPhone: Settings > Camera > Formats > Most Compatible) "
+            "or convert, e.g. ffmpeg -i in.mp4 -c:v libx264 -crf 18 out.mp4"
+        )
+    cap.release()
+    cap = cv2.VideoCapture(path)  # reopen so the first frame is not lost
     try:
         while True:
             ok, frame = cap.read()

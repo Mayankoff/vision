@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import time
 
 import numpy as np
@@ -53,6 +54,8 @@ def main(argv=None) -> None:
     ap.add_argument("--max-side", type=int, default=720, help="downscale larger frames to this size (0 = never)")
     args = ap.parse_args(argv)
 
+    if not os.path.exists(args.video):
+        raise SystemExit(f"video not found: {os.path.abspath(args.video)}")
     fps = args.fps or video_fps(args.video)
     t0 = time.perf_counter()
     with FaceLandmarker(args.model) as lm:

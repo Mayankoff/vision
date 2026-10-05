@@ -82,3 +82,14 @@ def test_downscale_limits_longer_side():
     frames = [np.zeros((1080, 1920, 3), np.uint8), np.zeros((300, 200, 3), np.uint8)]
     out = list(downscale(iter(frames), 720))
     assert out[0].shape == (405, 720, 3) and out[1].shape == (300, 200, 3)
+
+
+def test_iter_video_explains_missing_and_undecodable_files(tmp_path):
+    from rppg.io.datasets import iter_video
+
+    with pytest.raises(FileNotFoundError):
+        next(iter_video(str(tmp_path / "missing.mp4")))
+    bad = tmp_path / "bad.mp4"
+    bad.write_bytes(b"not a video")
+    with pytest.raises(IOError, match="HEVC"):
+        next(iter_video(str(bad)))
