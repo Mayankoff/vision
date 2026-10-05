@@ -2,7 +2,7 @@
 .SYNOPSIS
   Phase 1: our classical pipeline on one dataset (face landmarks -> traces -> GREEN/ICA/CHROM/POS -> scores).
 .EXAMPLE
-  powershell -ExecutionPolicy Bypass -File scripts\windows\run_phase1.ps1 -Dataset ubfc
+  powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\run_phase1.ps1 -Dataset ubfc
 #>
 param(
     [ValidateSet("ubfc", "pure", "mmpd")][string]$Dataset = "ubfc",

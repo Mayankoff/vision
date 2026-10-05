@@ -33,23 +33,25 @@ cd C:\vision
 ### 1. Our pipeline - Python 3.11, 3.12 or 3.13 (not 3.10), CPU is enough
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\windows\setup.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\setup.ps1
 .venv\Scripts\Activate.ps1
 ```
 
 This creates `.venv`, installs the pinned requirements and the `rppg` package, downloads the
 MediaPipe face model (3.7 MB, to `models\`) and runs the tests.
 
-### 2. rPPG-Toolbox environment - Python 3.8, needs Miniconda
+### 2. rPPG-Toolbox environment - Python 3.8, no conda needed
 
 The toolbox needs Python 3.8 + PyTorch 2.1.2, which current MediaPipe does not support, so it
-gets its **own** conda environment; the two halves exchange files only. In an Anaconda
-PowerShell Prompt:
+gets its **own** environment, `.venv-toolbox`; the two halves exchange files only. The script uses
+`uv` (installed into `.venv`), which downloads Python 3.8 by itself:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\windows\setup_toolbox_env.ps1        # NVIDIA GPU (CUDA 12.1)
-powershell -ExecutionPolicy Bypass -File scripts\windows\setup_toolbox_env.ps1 -Cpu   # no GPU: enough for Phase 2
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\setup_toolbox_env.ps1        # NVIDIA GPU (CUDA 12.1)
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\setup_toolbox_env.ps1 -Cpu   # no NVIDIA GPU: enough for Phase 2
 ```
+
+The phase scripts find `.venv-toolbox` automatically. (If you prefer conda, add `-Conda`.)
 
 The toolbox's `setup.sh` is bash-only and builds `mamba-ssm`, which only compiles on Linux +
 CUDA. The script skips it; `scripts\toolbox\stubs\mamba_ssm` stands in so the toolbox still
@@ -102,7 +104,7 @@ python scripts\figure_pipeline.py my_face.mp4 --out fig_pipeline.png    # report
 ### Phase 1 - our classical pipeline on a dataset
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\windows\run_phase1.ps1 -Dataset ubfc   # add -DebugVideos for ROI overlays
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\run_phase1.ps1 -Dataset ubfc   # add -DebugVideos for ROI overlays
 ```
 
 which runs:
@@ -119,15 +121,15 @@ python scripts\run_classical.py cache\traces\ubfc --split splits\ubfc.json --sub
 ### Phase 2 - toolbox baselines, cross-check, ROI ablation
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\windows\run_phase2.ps1                    # every dataset present in data\
-powershell -ExecutionPolicy Bypass -File scripts\windows\run_phase2.ps1 -Datasets ubfc     # just one
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\run_phase2.ps1                    # every dataset present in data\
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\run_phase2.ps1 -Datasets ubfc     # just one
 ```
 
 For each dataset it runs Phase 1 if needed, then:
 
 ```powershell
 # toolbox environment: toolbox preprocessing (Haar-cascade face crop) + its 7 classical methods, per-video outputs
-conda run -n rppg-toolbox python scripts\toolbox\dump_unsupervised.py --config_file configs\toolbox\UBFC-rPPG_UNSUPERVISED.yaml
+.venv-toolbox\Scripts\python.exe scripts\toolbox\dump_unsupervised.py --config_file configs\toolbox\UBFC-rPPG_UNSUPERVISED.yaml
 # our environment: re-score them with OUR protocol, same CSV format as run_classical.py
 python scripts\score_predictions.py cache\toolbox\predictions\UBFC-rPPG --out results\toolbox\ubfc
 # tables + figures

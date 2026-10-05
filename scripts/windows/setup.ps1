@@ -2,7 +2,7 @@
 .SYNOPSIS
   Create our Python environment (.venv) and install the rppg package. Needs Python 3.11-3.13.
 .EXAMPLE
-  powershell -ExecutionPolicy Bypass -File scripts\windows\setup.ps1
+  powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\setup.ps1
 #>
 param([string]$Python = "")
 . (Join-Path $PSScriptRoot "common.ps1")

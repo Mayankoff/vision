@@ -5,8 +5,8 @@
   For each dataset folder that exists under data\: runs Phase 1 if its traces are missing, runs the toolbox's
   methods (toolbox environment), scores them with our protocol, then writes results\phase2\REPORT.md.
 .EXAMPLE
-  powershell -ExecutionPolicy Bypass -File scripts\windows\run_phase2.ps1
-  powershell -ExecutionPolicy Bypass -File scripts\windows\run_phase2.ps1 -Datasets ubfc -ToolboxPython C:\miniconda3\envs\rppg-toolbox\python.exe
+  powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\run_phase2.ps1
+  powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\run_phase2.ps1 -Datasets ubfc -ToolboxPython C:\miniconda3\envs\rppg-toolbox\python.exe
 #>
 param(
     [string[]]$Datasets = @("ubfc", "pure", "mmpd"),

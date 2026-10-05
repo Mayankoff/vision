@@ -11,3 +11,4 @@ models/*.task
 results/**/debug/
 *.mp4
 *.avi
+.venv-toolbox/

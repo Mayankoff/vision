@@ -21,9 +21,17 @@ function Get-OurPython {
     return $py
 }
 
+function Get-ToolboxVenvPython {
+    $py = Join-Path $Repo ".venv-toolbox/Scripts/python.exe"
+    if (-not (Test-Path $py)) { $py = Join-Path $Repo ".venv-toolbox/bin/python" }
+    return $py
+}
+
 function Invoke-Toolbox {
-    # Run a Python script in the rPPG-Toolbox environment: either a python.exe path, or a conda env name.
+    # Run a Python script in the rPPG-Toolbox environment: an explicit python.exe, else .venv-toolbox
+    # (made by setup_toolbox_env.ps1), else the named conda env.
     param([string]$ToolboxPython, [string]$ToolboxEnv, [string[]]$Arguments)
+    if (-not $ToolboxPython -and (Test-Path (Get-ToolboxVenvPython))) { $ToolboxPython = Get-ToolboxVenvPython }
     if ($ToolboxPython) {
         Invoke-Checked $ToolboxPython $Arguments
     } else {
