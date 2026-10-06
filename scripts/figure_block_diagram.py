@@ -106,7 +106,7 @@ def system_diagram(path: Path) -> None:
              "proposed")
     p2 = box(ax, 6.0, yp, 2.4, h + 0.35, "~25 skin patches", "\n\neach patch: own RGB trace\n-> own POS pulse",
              "proposed")
-    p3 = box(ax, 8.8, yp, 2.4, h + 0.35, "Quality weighting", "\n\nspectral peak sharpness,\nface orientation,\nbrightness",
+    p3 = box(ax, 8.8, yp, 2.4, h + 0.35, "Quality weighting", "\n\npulse quality, agreement\nbetween patches, face\norientation, brightness",
              "proposed")
     p4 = box(ax, 11.6, yp, 2.4, h + 0.35, "Fusion + motion\ncompensation",
              "\n\nweighted sum of patches,\nremove head-motion part", "proposed")
@@ -143,7 +143,7 @@ def system_diagram(path: Path) -> None:
 
 def proposed_diagram(path: Path) -> None:
     edge, fill = BRANCH["proposed"]
-    fig, ax = new_canvas(17, 9.0)
+    fig, ax = new_canvas(18.4, 9.0)
     ax.text(0.4, 8.6, "Proposed method: quality-aware, motion-compensated multi-patch rPPG", fontsize=15,
             fontweight="bold", color=INK)
     ax.text(0.4, 8.2, "Runs on a CPU, needs no training; POS is reused inside each patch",
@@ -167,9 +167,13 @@ def proposed_diagram(path: Path) -> None:
              "proposed", title_size=10)
     q3 = box(ax, 12.0, yq, 2.6, hq, "Pulse quality", "\n\nFFT of each patch pulse:\nshare of power in the\nsharpest peak",
              "proposed", title_size=10)
+    q4 = box(ax, 15.0, yq, 3.0, hq, "Agreement check", "\n\nweighted vote on the peak\nfrequency across patches;\ndisagreeing patch -> low",
+             "proposed", title_size=10)
     for src, dst in [(pt, q1), (tr, q2), (ps, q3)]:
         arrow(ax, bottom(src), top(dst))
-    ax.add_patch(FancyBboxPatch((5.75, yq - 0.25), 9.1, hq + 0.5, boxstyle="round,pad=0,rounding_size=0.15",
+    arrow(ax, right(q3), left(q4))
+    ax.text((q3[0] + q3[2] + q4[0]) / 2, yq + hq / 2 + 0.12, "peaks", fontsize=8, color=INK2, ha="center", va="bottom")
+    ax.add_patch(FancyBboxPatch((5.75, yq - 0.25), 12.5, hq + 0.5, boxstyle="round,pad=0,rounding_size=0.15",
                                 lw=1.2, ls="--", edgecolor=edge, facecolor="none", zorder=0))
     ax.text(5.55, yq + hq / 2, "5. Trust score\nper patch\n(updated every\nfew seconds)", ha="right", va="center",
             fontsize=10, fontweight="bold", color=edge, linespacing=1.3)
@@ -190,8 +194,8 @@ def proposed_diagram(path: Path) -> None:
     arrow(ax, (x1, yb), (x1, yf), color=edge)
     ax.text(x0 + 0.15, 2.6, "head pose\n(motion reference)", fontsize=8.5, color=edge, ha="left", va="center")
 
-    ax.text(out[0] + out[2] / 2, yf + hf + 0.15, "low trust ->\n\"signal unreliable\"", fontsize=8.5, color=INK2,
-            ha="center", va="bottom")
+    ax.text(out[0] + out[2] + 0.15, yf + hf / 2, "low trust ->\n\"signal\nunreliable\"", fontsize=8.5, color=INK2,
+            ha="left", va="center")
 
     for ext in ("png", "svg"):
         fig.savefig(path.with_suffix(f".{ext}"), dpi=200, facecolor="white")
