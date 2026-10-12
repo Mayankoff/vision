@@ -12,12 +12,13 @@ See [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) for the phased plan.
 
 ## Status
 
-| Phase | State |
-|---|---|
-| 0 - Setup, protocol, splits | Done in code. **Still to do by the team:** request PURE + MMPD access, download UBFC-rPPG, set up the toolbox environment, run `make_splits.py --check` on each dataset. |
-| 1 - Own classical pipeline | Implemented and tested on synthetic data. **Next:** run on UBFC-rPPG. |
-| 2 - Toolbox baselines, cross-check, ROI ablation | Implemented and tested end to end (both environments, Windows scripts) on synthetic data. **Next:** run on the real datasets. |
-| 3-7 | Not started. |
+**The project direction changed.** See [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) for the new plan:
+a thermal-guided, quality-aware multi-patch rPPG system with stress estimation
+([architecture diagram](docs/figures/block_diagram_proposed.png)). It is **planned, not built yet**.
+
+The code described below (classical methods, rPPG-Toolbox integration, evaluation protocol,
+Windows scripts) was built for the earlier plan. It stays in the repository for now as
+infrastructure and for the comparison baselines; it will be reorganised when the new build starts.
 
 ## Setup (Windows)
 

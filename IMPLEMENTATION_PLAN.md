@@ -1,378 +1,187 @@
-# Implementation Plan — Contactless Vital Sign Estimation from Facial Video (rPPG)
+# Implementation Plan — Thermal-Guided, Quality-Aware Multi-Patch rPPG with Stress Estimation
 
 BCSE417L Machine Vision · Mayank (23BAI0158), Vyomesh Pandita (23BAI0151)
 
-This plan turns the Review 2 document into concrete, phased engineering work. It is
-organised so that every promise in the report maps to a deliverable:
+> **Status: plan only.** Nothing in this plan is built yet; building starts when the team says so.
+> This plan replaces the earlier benchmark-centred plan. Existing methods (POS, CHROM, PhysNet, …)
+> are no longer part of the architecture. They are only **comparison baselines** in the evaluation.
 
-| Report promise | Delivered in |
+Architecture diagram: [`docs/figures/block_diagram_proposed.png`](docs/figures/block_diagram_proposed.png)
+
+---
+
+## 1. What we are building
+
+A contactless system that takes **synchronised RGB + thermal video of a face** and outputs:
+
+| Output | Why it matters |
 |---|---|
-| Working prototype: RGB video → BPM | Phase 1 (offline), Phase 6 (live webcam) |
-| Classical methods CHROM / POS / ICA | Phase 1 (own implementation), Phase 2 (toolbox cross-check) |
-| Deep models PhysNet / TS-CAN / EfficientPhys / PhysFormer | Phase 3 |
-| Benchmark on UBFC-rPPG, PURE, MMPD with MAE/RMSE/MAPE/Pearson/SNR | Phases 2–3 |
-| Cross-dataset generalisation | Phase 3 |
-| Condition-wise robustness on MMPD (skin tone, motion, lighting) | Phase 4 |
-| Accuracy-vs-efficiency trade-off (latency, FPS, params, memory) | Phase 5 |
-| Reproducible protocol | Phase 0 (pinned env, fixed splits), Phase 7 |
+| Heart rate (BPM) | core vital sign |
+| Breathing rate (breaths/min) | second vital sign, from thermal; also used to make the heart rate more reliable |
+| Heart-rate variability (RMSSD, SDNN, LF/HF) | beat-to-beat timing; the physiological basis of the stress estimate |
+| **Stress level** (low / moderate / high) | the real-life use case (Section 3) |
+| Confidence / "signal unreliable" | the system says when it cannot be trusted instead of giving a wrong number |
 
-## Progress
+### Pipeline (matches the diagram)
 
-| Phase | Status |
-|---|---|
-| 0 | Code side done: repo skeleton, toolbox submodule pinned (`b7500b8`), pinned requirements, frozen protocol (`src/rppg/protocol.py`), fixed splits (`splits/*.json`). Remaining (team): dataset access/downloads, toolbox env on a GPU machine, `make_splits.py --check` per dataset. |
-| 1 | Pipeline implemented (all of Blocks 1–4, 5A, 6–9), tested incl. an end-to-end MediaPipe test on synthetic video. Remaining: run on UBFC-rPPG and check the exit criterion. |
-| 2 | Implemented and run end to end on a synthetic dataset in both environments: toolbox per-video outputs (`scripts/toolbox/dump_unsupervised.py`), re-scoring with our protocol (`score_predictions.py`), cross-check + ROI ablation report with figures (`phase2_report.py`), pipeline figure (`figure_pipeline.py`), Windows PowerShell runners. Remaining: run on the real datasets. |
-| Windows | Supported: PowerShell setup/run scripts; toolbox runs without mamba-ssm (stub) and with Windows "spawn" multiprocessing; short toolbox cache names to stay under the 260-char path limit. |
+**RGB stream**
+1. **Face landmarks + head pose:** MediaPipe FaceLandmarker gives 478 3D landmarks and a head rotation/translation per frame.
+2. **Skin patches:** forehead and cheeks are split into about 25 patches defined on the face mesh, so they move with the face.
+3. **Patch colour traces:** mean R, G, B of every patch in every frame.
+4. **POS per patch:** 25 candidate pulse signals.
 
----
+**Thermal stream**
+- **T1. RGB-thermal registration:** map landmarks and patches from the RGB frame onto the thermal frame.
+- **T2. Thermal ROIs:** temperature of each patch, the nose tip and the nostril region.
+- **T3. Nose-tip temperature:** slow trend; the nose tip cools under stress (sympathetic vasoconstriction).
+- **T4. Breathing signal:** nostril temperature rises and falls with each breath, giving the breathing rate (RR).
 
-## Guiding decisions
-
-1. **Two codebases, clearly separated.**
-   - **Our own pipeline** (`src/rppg/`): MediaPipe face landmarks → forehead/cheek
-     ROI masks → RGB traces → CHROM/POS/ICA → HR. This is the "machine vision"
-     contribution, the thing we can explain line by line, and the backbone of the
-     live demo.
-   - **rPPG-Toolbox** (pinned git submodule under `external/`): used for the deep
-     models and as the standardised benchmark harness. We do not modify its
-     internals; we only add our own YAML configs and post-processing scripts.
-2. **Our classical results must be checked against the toolbox's classical results.**
-   If our POS on UBFC-rPPG is far from the toolbox's POS, there's a bug in ours.
-3. **One evaluation definition everywhere.** Same HR band, same window length, same
-   HR estimator (FFT), same ground-truth HR derivation, for every method. Results are
-   saved **per video** (not only as averages) so any table, plot or condition-wise
-   breakdown can be regenerated without re-running models.
-4. **Get access to datasets on day 1.** PURE and MMPD need request forms/licence
-   agreements and can take days to weeks. UBFC-rPPG is openly downloadable, so all
-   early work happens on UBFC.
+**Trust, fusion and analysis**
+5. **Trust score per patch**, updated every few seconds, from five checks:
+   - **pulse quality:** share of the patch pulse's spectral power in its sharpest peak,
+   - **agreement:** weighted vote on the peak frequency across patches; disagreeing patches are down-weighted,
+   - **face orientation:** patch surface normal from the 3D landmarks; patches turned away are down-weighted,
+   - **brightness:** patches in shadow or with shine are down-weighted,
+   - **thermal skin check (new):** a patch that is not at skin temperature (hair, glasses, occlusion, background) is down-weighted. Thermal is unaffected by visible light, so a sudden RGB change with no thermal change also flags a lighting artifact.
+6. **Weighted fusion:** trust-weighted average of the patch pulses, plus a confidence value.
+7. **Motion removal:** regress out the part of the fused pulse that follows head pose.
+8. **Heart + breathing rate (breathing-aware):** FFT peak picking that **rejects peaks at the breathing rate and its harmonics**. These are a common way rPPG locks onto the wrong frequency, and thermal gives us the breathing rate to avoid them.
+9. **HRV:** beat detection on the fused pulse gives inter-beat intervals, then RMSSD, SDNN and LF/HF. Only high-confidence windows are used.
+10. **Stress estimation:** a classifier on HR, HRV, RR and the nose-tip temperature trend gives low / moderate / high stress, or "unreliable" when confidence is low.
 
 ---
 
-## Proposed repository layout
+## 2. What is new (and what is not)
 
-```
-vision/
-├── IMPLEMENTATION_PLAN.md
-├── README.md                  # setup + how to reproduce every table
-├── requirements.txt           # pinned versions for our pipeline (toolbox has its own env)
-├── external/rPPG-Toolbox/     # git submodule, pinned to a specific commit
-├── configs/toolbox/           # our YAML configs for the toolbox (one per experiment)
-├── splits/                    # fixed subject-ID splits as JSON (committed)
-├── data/                      # gitignored; symlinks to raw datasets
-├── src/rppg/
-│   ├── io/                    # video/frame readers, UBFC / PURE / MMPD loaders + GT
-│   ├── face/                  # MediaPipe landmarker wrapper, ROI polygon masks
-│   ├── signal/                # preprocess.py, chrom.py, pos.py, ica.py, green.py, hr.py
-│   ├── eval/                  # metrics.py, snr.py, bland_altman.py, stats.py
-│   └── bench/                 # latency.py, complexity.py (params, FLOPs, memory)
-├── scripts/                   # run_classical.py, run_toolbox.sh, collect_results.py,
-│                              # mmpd_conditions.py, benchmark_efficiency.py
-├── app/live_demo.py           # webcam prototype
-├── tests/                     # unit tests (synthetic signals, metrics)
-├── results/                   # per-video CSVs, summary tables, figures (small files only)
-└── notebooks/                 # exploration + figure generation
-```
+Honest positioning against the closest prior work:
 
----
-
-## Phase 0 — Setup, data access, protocol freeze (Week 1)
-
-**Goal:** everything needed to start running experiments, with zero ambiguity about
-how they'll be evaluated.
-
-Tasks
-- [ ] **Request PURE and MMPD access immediately** (PURE: request form on the TU
-      Ilmenau page; MMPD: sign the licence agreement in the GitHub repo. Ask for
-      **mini-MMPD (320×240)**, which is what the toolbox configs target and is far
-      smaller than full resolution). Download UBFC-rPPG (DATASET_2).
-- [ ] Create the repo skeleton above; add rPPG-Toolbox as a submodule and **record the
-      commit hash** in the README.
-- [ ] Build **two environments**: the toolbox's (Python 3.8 + CUDA via its `setup.sh`)
-      and ours (Python ≥ 3.10, `requirements.txt`). Current MediaPipe doesn't support
-      Python 3.8, so they can't be merged; they exchange files only.
-- [ ] Secure GPU compute (lab GPU, Colab, or Kaggle). Measure disk space: the toolbox
-      caches preprocessed clips, which can be tens of GB per dataset/config.
-- [ ] **Freeze the evaluation protocol** in `README.md` (see "Evaluation protocol" below).
-- [ ] **Freeze the subject splits**: write `splits/ubfc.json`, `splits/pure.json`,
-      `splits/mmpd.json` (70/15/15 by subject, fixed seed, committed to git).
-
-Exit criteria
-- `python -c "import torch, mediapipe, cv2, scipy"` works; toolbox runs its unit
-  example on UBFC with a pretrained checkpoint.
-- Split files and protocol committed.
-
----
-
-## Phase 1 — Own classical pipeline on UBFC-rPPG (Weeks 2–3)
-
-**Goal:** a working end-to-end offline prototype (video file → BPM) built by us,
-implementing Blocks 1–4, 5A, 6, 7, 8, 9 of the report.
-
-Tasks
-1. **Block 1 — Input.** `io/`: frame reader (OpenCV) returning frames + timestamps;
-   UBFC loader that also parses `ground_truth.txt` (BVP, HR, timestamps).
-2. **Block 2 — Face detection.** `face/landmarker.py`: wrap MediaPipe face landmarks.
-   The legacy `mp.solutions.face_mesh` API is no longer shipped in current mediapipe,
-   so use the Tasks `FaceLandmarker` API (478 landmarks incl. iris); pin the
-   mediapipe version and keep the wrapper interface stable. Handle missed detections
-   (reuse last landmarks for ≤ N frames, otherwise flag the frame).
-3. **Block 3 — ROI extraction.** `face/roi.py`: landmark-index polygons for forehead,
-   left cheek, right cheek; `cv2.fillPoly` masks; exclude eyes/brows/lips/nostrils.
-   Save a debug video with ROI overlays — this is a great figure for the report.
-4. **Block 4 — Preprocessing.** `signal/preprocess.py`: per-frame spatial mean of
-   R, G, B over the mask → `(T, 3)` trace; resample to a uniform rate if timestamps
-   are jittery; temporal normalisation; detrending (smoothness-priors detrend or
-   `scipy.signal.detrend`); Butterworth band-pass with `filtfilt`.
-5. **Block 5A — Classical methods.** `signal/chrom.py`, `pos.py`, `ica.py`, plus
-   `green.py` as the simplest baseline. POS and CHROM use overlapping windows
-   (~1.6 s) with overlap-add, as in the original papers. ICA via
-   `sklearn.decomposition.FastICA`, selecting the component with the highest spectral
-   peak in the HR band.
-6. **Blocks 6–7 — Pulse + HR.** `signal/hr.py`: FFT/Welch peak in band → BPM; and
-   peak detection (`find_peaks`) → mean IBI → BPM.
-7. **Block 9 — Metrics.** `eval/metrics.py`: MAE, RMSE, MAPE, Pearson r; `eval/snr.py`:
-   SNR as in de Haan & Jeanne (power around the GT HR fundamental + first harmonic
-   vs. the rest of the band).
-8. **Tests.** `tests/`: synthetic RGB traces with a known 72 BPM pulse + noise + drift
-   → every method must recover HR within ±2 BPM; metric functions checked against
-   hand-computed values.
-9. `scripts/run_classical.py --dataset ubfc --method pos` → writes
-   `results/classical/ubfc_pos.csv` (one row per video: id, HR_pred, HR_gt, SNR,
-   runtime).
-
-Deliverables
-- Offline prototype: `rppg video.avi` prints BPM and plots the pulse.
-- First results table: GREEN / ICA / CHROM / POS on UBFC-rPPG (our implementation).
-
-Exit criteria
-- All tests pass. POS and CHROM MAE on UBFC-rPPG in the low single digits of BPM
-  (the report's ~4 BPM ballpark). If it's much worse, debug before moving on
-  (common culprits: wrong band, missing normalisation, BVP/video misalignment).
-
----
-
-## Phase 2 — Toolbox classical baselines on all three datasets (Week 3–4)
-
-**Goal:** standardised unsupervised results on UBFC-rPPG, PURE and MMPD, and a
-cross-check of our implementation.
-
-Tasks
-- [ ] Write toolbox configs for the unsupervised methods (ICA, POS, CHROM, GREEN;
-      LGI/PBV are free extras) on each dataset. Note: the toolbox's stock MMPD config
-      evaluates only a subset (stationary, skin type 3, no exercise, no natural light);
-      ours uses every MMPD video.
-- [ ] Turn on saving of test outputs and write `scripts/collect_results.py` that
-      converts the toolbox outputs into the **same per-video CSV format** as Phase 1.
-- [ ] Run our own pipeline on PURE and MMPD too (loaders for PURE's PNG frames +
-      JSON ground truth, and MMPD's `.mat` files).
-- [ ] **Cross-check table:** ours vs. toolbox for POS/CHROM/ICA on each dataset.
-- [ ] **ROI ablation (cheap, adds novelty):** toolbox-style face bounding-box crop vs.
-      our MediaPipe forehead+cheek masks, same method (POS), same datasets.
-
-Deliverables
-- Table: classical methods × {UBFC-rPPG, PURE, MMPD} × {MAE, RMSE, MAPE, r, SNR}.
-- Table: ROI strategy ablation.
-
-Exit criteria
-- Our implementation and the toolbox agree within a small margin, or the difference
-  is understood and explained (e.g. different ROI, different detrending).
-
----
-
-## Phase 3 — Deep-learning models (Weeks 4–7)
-
-**Goal:** PhysNet, TS-CAN, EfficientPhys, PhysFormer evaluated intra- and cross-dataset
-under one protocol. (DeepPhys is optional — near-free in the toolbox and is the
-ancestor of TS-CAN/EfficientPhys.)
-
-Step 3a — Pretrained inference first (Week 4)
-- The toolbox ships pretrained checkpoints (trained on PURE, UBFC-rPPG, SCAMPS, …).
-  Run inference-only configs with them on all three datasets. This produces a full
-  first DL table quickly and validates the data pipeline before spending GPU hours.
-
-Step 3b — Training under our protocol (Weeks 5–7)
-- **Intra-dataset:** train/val/test with the fixed 70/15/15 subject splits from Phase 0.
-  UBFC-rPPG has only ~42 subjects, so test-set results will be noisy; report
-  confidence intervals (Phase 7).
-- **Cross-dataset:** train on PURE → test on UBFC-rPPG and MMPD; train on UBFC-rPPG →
-  test on PURE and MMPD. This is the toolbox's standard protocol, so our numbers can
-  be compared directly with its published tables.
-- Use the toolbox's default preprocessing per model (input size, `DiffNormalized` /
-  `Standardized`, chunk length) — don't hand-tune per model, or the comparison is
-  no longer fair.
-- Model selection on the validation set only; log every run (config, seed, epoch,
-  val loss) to `results/runs.csv`.
-- Fix seeds; if compute allows, repeat the main cross-dataset runs with 3 seeds.
-
-Compute budget tips
-- Train one model end-to-end first (TS-CAN or EfficientPhys: cheapest) to shake out
-  problems; PhysFormer is the most expensive, so schedule it last.
-- Preprocessed caches can be reused across models that share an input format.
-
-Deliverables
-- Master table: {GREEN, ICA, CHROM, POS, PhysNet, TS-CAN, EfficientPhys, PhysFormer}
-  × {intra UBFC, intra PURE, PURE→UBFC, UBFC→PURE, →MMPD}.
-- Saved checkpoints and per-video prediction CSVs.
-
-Exit criteria
-- All cells of the master table filled; numbers are in the same ballpark as the
-  toolbox paper for matching protocols (or differences are explained).
-
----
-
-## Phase 4 — Condition-wise robustness analysis on MMPD (Weeks 7–8)
-
-**Goal:** the report's main novelty claim — where and why methods fail.
-
-Tasks
-- [ ] Extract MMPD metadata per video (skin tone, motion, lighting, exercise, glasses,
-      hair cover, make-up — stored in each `.mat` file) into
-      `results/mmpd_metadata.csv`.
-- [ ] `scripts/mmpd_conditions.py`: join per-video predictions (all methods) with
-      metadata; compute metrics grouped by
-      - skin tone (Fitzpatrick type),
-      - motion (stationary / rotation / talking / walking),
-      - lighting (LED-low / LED-high / incandescent / natural),
-      - and selected 2-way combinations (e.g. skin tone × lighting).
-- [ ] Figures: grouped bar charts of MAE per condition per method; heatmap of
-      method × condition MAE; Bland–Altman plots for the best classical and best DL
-      method.
-- [ ] Report group sizes next to every number; with ~20 videos per subject, small
-      groups need confidence intervals before drawing conclusions.
-- [ ] Write the analysis: which method family degrades least, under which condition,
-      and the likely physical reason (melanin absorption → lower pulsatile amplitude;
-      motion → specular/intensity changes; low light → sensor noise).
-
-Deliverables
-- Robustness tables + figures, and a written discussion section for the report.
-
----
-
-## Phase 5 — Efficiency benchmarking (Week 8–9, can run in parallel with Phase 4)
-
-**Goal:** accuracy-vs-compute trade-off across method families.
-
-Tasks
-- [ ] `bench/complexity.py`: parameter count (`sum(p.numel())`), FLOPs per clip
-      (thop or fvcore), normalised to per-frame.
-- [ ] `bench/latency.py`: warm-up then timed runs on **CPU and GPU** separately
-      (`torch.cuda.synchronize()` around GPU timings); report ms/frame, FPS, and peak
-      memory (`torch.cuda.max_memory_allocated`; `tracemalloc`/`psutil` for CPU).
-      Clip-based models (PhysNet, PhysFormer) process a whole chunk at once — divide
-      by chunk length so per-frame numbers are comparable to frame-based models.
-- [ ] Time the classical pipeline the same way, and report **face detection/ROI
-      cost separately** from the rPPG method cost (otherwise MediaPipe dominates and
-      hides the difference between CHROM and POS).
-- [ ] Record the exact hardware (CPU model, GPU model, RAM) in the table caption.
-      The report quotes Raspberry Pi 4B and literature numbers; we report what we
-      actually measured and cite literature numbers separately.
-- [ ] Plot: MAE (on MMPD and on UBFC) vs. ms/frame, log-x; mark the Pareto front.
-
-Deliverables
-- Efficiency table + accuracy-vs-latency scatter plot.
-
----
-
-## Phase 6 — Live webcam prototype (Weeks 9–10)
-
-**Goal:** demonstrate the system working on a real person.
-
-Design
-- Capture with OpenCV; attempt to lock auto-exposure / auto-white-balance (a common
-  source of fake "pulses"); log real timestamps and resample to a uniform rate.
-- Sliding window: ~10 s buffer, BPM update every 1 s; show HR only once the buffer
-  is full.
-- Default engine: our MediaPipe + POS pipeline (runs in real time on CPU).
-  Optional toggle: a lightweight DL model (TS-CAN or EfficientPhys) using a
-  pretrained checkpoint.
-- UI (Streamlit or plain OpenCV window): video with ROI overlay, live pulse
-  waveform, spectrum, BPM, and a signal-quality indicator (SNR or spectral peak
-  ratio) that warns when the estimate is unreliable (motion, low light, no face).
-
-Validation
-- Record a few short sessions with a fingertip pulse oximeter or smartwatch reading
-  as rough reference (rest vs. after light exercise). Present this only as a
-  qualitative demo, not as a benchmark result.
-
-Deliverables
-- `app/live_demo.py`, a screen recording for the final review.
-
----
-
-## Phase 7 — Statistical analysis, reproducibility, final report (Weeks 10–12)
-
-Tasks
-- [ ] Bootstrap 95% CIs for MAE and r for every main table cell.
-- [ ] Paired significance tests between methods on the same videos (Wilcoxon
-      signed-rank on absolute errors) for the headline comparisons.
-- [ ] `README.md`: one command per table/figure; all configs in `configs/`; split
-      files in `splits/`; toolbox commit hash; hardware used.
-- [ ] Final report: results, robustness discussion, efficiency trade-off,
-      limitations, future work (respiration/HRV, motion-robust ROI tracking,
-      domain adaptation).
-- [ ] Final demo + slides.
-
----
-
-## Evaluation protocol (freeze in Phase 0)
-
-| Item | Decision to record |
-|---|---|
-| HR frequency band | One band for every method: 0.7–3.0 Hz (42–180 BPM) as in the report. The toolbox's post-processing band is hard-coded (0.6–3.3 Hz at the pinned commit), so toolbox outputs are re-scored with our own code (`src/rppg/protocol.py`). |
-| Evaluation window | Whole-video HR (simplest, matches most papers), and optionally 10 s / 30 s windows for a secondary table. Same choice for every method. |
-| HR estimator | FFT peak as primary; peak-detection HR as a secondary column. |
-| Ground-truth HR | Derived from the reference BVP with the same estimator and window as the prediction (not the device's displayed HR). |
-| Metrics | MAE, RMSE, MAPE, Pearson r computed over per-video HR; SNR averaged over videos. |
-| Splits | Subject-independent 70/15/15, fixed JSON files; cross-dataset = train on one dataset, test on all videos of another. |
-| Seeds | Fixed and logged; ≥ 3 seeds for headline DL runs if compute allows. |
-
----
-
-## Suggested division of work
-
-| Track | Owner (suggested) | Phases |
+| Prior work | What it did | What it did **not** do |
 |---|---|---|
-| A — Vision + classical + demo | Mayank | 1, 2 (own pipeline, ROI ablation), 6 |
-| B — Deep learning + benchmarking | Vyomesh | 2 (toolbox runs), 3, 5 |
-| Shared | Both | 0, 4, 7 |
+| Negishi et al., 2020 (Sensors) | RGB-thermal camera: HR from RGB, RR from nose/mouth temperature, body temperature; influenza screening | no multi-patch trust, no thermal-guided pulse extraction, no stress |
+| Cho et al., 2019 (JMIR Mental Health) | smartphone (contact) PPG + thermal nose tip for perceived stress | contact PPG, not camera rPPG |
+| Liu et al., 2024 (PeerJ CS) | fuses rPPG features + facial thermal features for cognitive stress | feature-level fusion only; thermal is not used to improve the pulse signal itself |
+| iBVP dataset paper, Joshi & Cho, 2024 | RGB + thermal rPPG dataset; tests BVP from thermal frames | no patch-level trust or breathing-aware HR |
 
-Swap freely; the point is that Tracks A and B can progress in parallel after Phase 0.
+**Our contribution:** thermal is used **inside** the pulse extraction, not just as an extra feature:
+1. **Thermal skin validity as a per-patch trust signal** in a quality-aware multi-patch rPPG.
+2. **Breathing-aware heart-rate selection** using the thermal breathing rate.
+3. **Confidence-gated stress estimation:** stress is only estimated from windows the system trusts, and it abstains otherwise.
+
+In our literature search we did not find this combination. Before submission we will repeat the search to make sure the claim still holds, and state it as "to our knowledge".
 
 ---
 
-## Risks and mitigations
+## 3. Real-life use case: contactless stress / mental-workload monitoring
+
+**Why stress:**
+- **HRV is an established stress marker.** A review of 37 studies found that HRV changes under psychological stress, most often as reduced parasympathetic (high-frequency) activity (Kim et al., 2018, *Psychiatry Investigation*).
+- **Remote PPG can detect stress.** On UBFC-Phys, stress state recognition reached 85.48% accuracy using remote pulse-rate-variability features (Meziati Sabour et al., 2021, *IEEE Trans. Affective Computing*). A recent systematic review and meta-analysis reports pooled accuracies of about 85% for rPPG and 73% for thermal imaging in noncontact stress monitoring [10].
+- **Facial temperature tracks arousal and stress.** Nose-tip temperature follows emotional arousal (Kosonogov et al., 2017, *PLOS ONE*), and stress tasks lower nose-tip temperature (reviewed in Ioannou et al., 2014, *Psychophysiology*).
+- **Applications:** workplace and student wellbeing, driver/operator fatigue and workload monitoring, telehealth check-ins, and exam/interview stress studies. All need no wearable.
+
+**Secondary use case (described, not evaluated):** fever / infection screening by combining HR, RR and skin temperature, as in Negishi et al., 2020. No public dataset exists for it, so we only discuss it.
+
+**Positioning:** the output is a **wellbeing / screening indicator, not a medical diagnosis**.
+
+---
+
+## 4. Data
+
+| Dataset | Modalities | Used for | Access |
+|---|---|---|---|
+| **iBVP** (Joshi & Cho, 2024) | RGB + thermal face video, ear PPG ground truth with signal-quality labels; 31 subjects, 124 videos of ~3 min; conditions: controlled breathing, math tasks, head movement | main dataset: HR, HRV and RR accuracy; effect of the thermal modules | public for research (request) |
+| **UBFC-Phys** (Meziati Sabour et al., 2021) | RGB face video, BVP + EDA wristband; 56 subjects; rest, speech and arithmetic tasks (Trier Social Stress Test style) | stress classification (RGB part); published 85.48% to compare against | IEEE DataPort |
+| UBFC-rPPG | RGB + PPG, controlled | sanity checks of the RGB stream | open download |
+| **Own pilot recordings** (optional) | webcam + FLIR Lepton 3.5 thermal (160x120, 8.7 Hz, ~US$370 with USB board), consumer pulse sensor or chest strap; rest vs mental arithmetic, self-reported stress (0–10) | the only way to evaluate stress **with** thermal features | needs informed consent from volunteers |
+
+**To verify when the data arrives:**
+- iBVP's thermal resolution and frame rate, and whether its RGB and thermal frames are already aligned.
+- Whether iBVP's math tasks have difficulty levels, and whether its breathing condition is paced at a known rate (which would give a breathing-rate reference). iBVP has no respiration ground truth; a reference can also be derived from the PPG's respiratory modulation.
+- Paced breathing changes HRV strongly, so iBVP's breathing condition **cannot** serve as a "low stress" class.
+
+---
+
+## 5. Phases
+
+### Phase 0: Setup and data access (week 1)
+- Request iBVP and UBFC-Phys; download UBFC-rPPG.
+- Reuse the existing environment setup and evaluation protocol (band 0.7–3.0 Hz, FFT HR, MAE/RMSE/MAPE/Pearson/SNR).
+- Decide on the pilot recordings: buy or borrow a thermal camera, or not.
+- **Exit:** at least iBVP and UBFC-Phys downloaded and loaders verified.
+
+### Phase 1: RGB multi-patch core (weeks 2–3) — steps 1–7
+- Patch definitions on the face mesh (25 patches); per-patch colour traces; per-patch orientation; head pose.
+- POS per patch; trust checks (pulse quality, agreement, orientation, brightness); weighted fusion; motion removal; confidence.
+- Tests on synthetic videos with known heart rates and deliberate artifacts (flicker, shine, head motion).
+- **Exit:** on iBVP and UBFC-rPPG, the full RGB method beats POS on a single skin region in HR MAE.
+
+### Phase 2: Thermal stream (weeks 3–5) — T1–T4 and the thermal skin check
+- RGB-thermal registration: use the dataset alignment if available, otherwise estimate an affine/homography transform per video (gradient-based image alignment, or a one-off calibration for our own camera rig).
+- Thermal ROIs: patch temperatures, nose tip, nostrils.
+- Thermal skin check added to the trust score; RGB-vs-thermal illumination-artifact check.
+- Breathing signal from the nostril ROI, giving RR; breathing-aware HR peak selection.
+- Nose-tip temperature trend.
+- **Exit:** on iBVP, thermal modules on vs off; HR error decreases, and RR agrees with the available reference.
+
+### Phase 3: HRV (week 5)
+- Beat detection, inter-beat intervals, RMSSD, SDNN, LF/HF; confidence gating.
+- **Exit:** HRV error vs ground-truth PPG on iBVP and UBFC-rPPG (for reference, a published RGB method reports RMSSD and SDNN errors of 10.5 ms and 6.15 ms on UBFC-rPPG [11]).
+
+### Phase 4: Stress estimation (weeks 6–7) — step 10
+- Features per window: HR, HRV (RMSSD, SDNN, LF/HF), RR, nose-tip temperature slope, confidence.
+- Simple, explainable classifiers (logistic regression, random forest); **leave-one-subject-out** cross-validation.
+- UBFC-Phys: rest vs stress tasks, RGB features only; compare with the published 85.48%.
+- Pilot recordings (if collected): RGB-only vs RGB + thermal features.
+- Abstention: accuracy vs the fraction of windows answered (coverage), with and without confidence gating.
+
+### Phase 5: Evaluation and comparison (weeks 7–8)
+- **Baselines (comparison only, not part of the architecture):** POS and CHROM on a single skin region; pretrained deep models from rPPG-Toolbox (PhysNet, TS-CAN, EfficientPhys, PhysFormer).
+- **Ablation:** RGB patches → + trust checks → + motion removal → + thermal skin check → + breathing-aware HR; for stress: HRV only → + RR → + nose temperature → + confidence gating.
+- **Efficiency:** ms/frame on a laptop CPU.
+
+### Phase 6: Live demo (weeks 8–9)
+- Webcam, plus a thermal camera if available: live HR, RR, HRV, stress level and confidence, with the patch trust map drawn on the face.
+
+### Phase 7: Report and presentation (weeks 9–10)
+
+---
+
+## 6. Evaluation metrics
+
+| What | Metrics |
+|---|---|
+| Heart rate | MAE, RMSE, MAPE, Pearson r, SNR |
+| Breathing rate | MAE vs reference |
+| HRV | absolute error of RMSSD and SDNN (ms) |
+| Stress | accuracy, F1, AUC (leave-one-subject-out); accuracy vs coverage with abstention |
+| Efficiency | ms/frame on CPU |
+
+---
+
+## 7. Risks and mitigations
 
 | Risk | Mitigation |
 |---|---|
-| PURE/MMPD access is delayed | Request on day 1; do Phases 1–3a on UBFC-rPPG in the meantime. |
-| Not enough GPU time | Use pretrained checkpoints (Phase 3a) for a complete table; train the cheapest models first; drop extra seeds before dropping models. |
-| Disk space for toolbox caches | Use mini-MMPD; delete caches for finished configs; cache only the input formats you need. |
-| MediaPipe API changes | Pin the version; isolate it behind `face/landmarker.py`. |
-| Our classical results disagree with the toolbox | Phase 2 cross-check is designed to catch this early; check band, normalisation, BVP alignment, PURE's 60 Hz ground truth vs. 30 fps video. |
-| Small test sets → noisy conclusions | Report CIs and group sizes; lean on cross-dataset results, which use the full target dataset. |
-| Webcam demo unstable | Good, steady lighting; lock exposure; signal-quality gate; keep a pre-recorded fallback video. |
+| No public dataset has RGB + thermal **and** stress labels | Stress validated on UBFC-Phys (RGB); thermal contribution to stress shown on pilot recordings; thermal contribution to HR/RR shown on iBVP |
+| Low thermal frame rate (~9 Hz on cheap cameras) | Thermal is used for breathing, temperature and trust, never for the pulse itself |
+| RGB-thermal registration errors | Check alignment visually; use large thermal ROIs; per-video alignment |
+| HRV needs very clean pulses | Confidence gating; report coverage alongside accuracy |
+| Small subject numbers for stress | Leave-one-subject-out validation, simple models, report confidence intervals |
+| Thermal camera cost | Pilot recordings are optional; the core results use public datasets |
+| Overclaiming novelty or medical use | Position it as "to our knowledge" novel and as a wellbeing indicator, not a diagnosis |
 
 ---
 
-## Things to correct or clarify in the report before the next review
+## 8. Key references
 
-1. **Face detection in the DL branch.** The architecture says MediaPipe Face Mesh
-   feeds both branches, but rPPG-Toolbox's dataloaders use their own face detector
-   (Haar cascade or RetinaFace) and bounding-box crops. Either state that the DL branch
-   uses toolbox preprocessing, or feed it MediaPipe-based crops. The ROI ablation in
-   Phase 2 turns this difference into a result.
-2. **"Same preprocessed data" for both branches.** Classical methods consume RGB
-   traces; DL models consume cropped frame clips. The accurate claim is "same
-   videos, same splits, same face crops where applicable, same HR post-processing".
-3. **MMPD skin-tone range.** The report says Fitzpatrick I–VI, but MMPD covers types
-   III–VI only (rPPG-Toolbox's MMPD loader rejects any other skin-colour label).
-   Correct this in the report; the skin-tone analysis in Phase 4 is over types 3–6.
-4. **POS citation year.** The literature survey says Wang et al., 2017, the reference
-   list says 2016. The IEEE TBME 64(7) issue is 2017; make them consistent.
-5. **Literature numbers need a protocol label.** E.g. "PhysNet ~0.58 BPM MAE on
-   UBFC" — state whether intra- or cross-dataset and from which source, since the
-   same model gives very different numbers under different protocols.
-6. **Efficiency claims.** Replace hardware-specific literature figures (Raspberry
-   Pi 4B, 6 ms/frame) in the "expected" section with "to be measured on <our
-   hardware>", and cite literature figures separately.
+- [1] Joshi, J., & Cho, Y. (2024). iBVP Dataset: RGB-Thermal rPPG Dataset with High Resolution Signal Quality Labels. *Electronics*, 13(7), 1334.
+- [2] Negishi, T., et al. (2020). Contactless Vital Signs Measurement System Using RGB-Thermal Image Sensors and Its Clinical Screening Test on Patients with Seasonal Influenza. *Sensors*, 20(8), 2171.
+- [3] Cho, Y., Julier, S. J., & Bianchi-Berthouze, N. (2019). Instant Stress: Detection of Perceived Mental Stress Through Smartphone Photoplethysmography and Thermal Imaging. *JMIR Mental Health*, 6(4), e10140.
+- [4] Liu, I., et al. (2024). Your blush gives you away: detecting hidden mental states with remote photoplethysmography and thermal imaging. *PeerJ Computer Science*, 10, e1912.
+- [5] Meziati Sabour, R., Benezeth, Y., De Oliveira, P., Chappé, J., & Yang, F. (2021). UBFC-Phys: A Multimodal Database for Psychophysiological Studies of Social Stress. *IEEE Transactions on Affective Computing*.
+- [6] Kim, H.-G., Cheon, E.-J., Bai, D.-S., Lee, Y. H., & Koo, B.-H. (2018). Stress and Heart Rate Variability: A Meta-Analysis and Review of the Literature. *Psychiatry Investigation*, 15(3), 235–245.
+- [7] Kosonogov, V., et al. (2017). Facial thermal variations: A new marker of emotional arousal. *PLOS ONE*, 12(9), e0183592.
+- [8] Ioannou, S., Gallese, V., & Merla, A. (2014). Thermal infrared imaging in psychophysiology: Potentialities and limits. *Psychophysiology*, 51(10), 951–963.
+- [9] Wang, W., den Brinker, A. C., Stuijk, S., & de Haan, G. (2017). Algorithmic principles of remote PPG. *IEEE Transactions on Biomedical Engineering*, 64(7), 1479–1491. (POS)
+- [10] Performance of artificial intelligence models for monitoring psychological stress using noncontact physiological signals: a systematic review and meta-analysis. PubMed Central, PMC13534124. https://pmc.ncbi.nlm.nih.gov/articles/PMC13534124/
+- [11] Robust Heart Rate Variability Measurement from Facial Videos. PubMed Central, PMC10376629. https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10376629/
