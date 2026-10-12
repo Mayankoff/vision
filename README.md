@@ -13,7 +13,7 @@ See [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) for the phased plan.
 ## Status
 
 **The project direction changed.** See [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) for the new plan:
-a thermal-guided, quality-aware multi-patch rPPG system with stress estimation
+a quality-aware multi-patch rPPG system with stress estimation, using one ordinary RGB camera
 ([architecture diagram](docs/figures/block_diagram_proposed.png)). It is **planned, not built yet**.
 
 The code described below (classical methods, rPPG-Toolbox integration, evaluation protocol,
