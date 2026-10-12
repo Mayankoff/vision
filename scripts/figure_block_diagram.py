@@ -73,17 +73,18 @@ def bottom(b, f=0.5):
 
 
 def proposed_diagram(path: Path) -> None:
-    W, H = 23.2, 11.0
+    W, H = 26.4, 11.0
     fig = plt.figure(figsize=(W, H))
     ax = fig.add_axes([0, 0, 1, 1])
     ax.set_xlim(0, W)
     ax.set_ylim(0, H)
     ax.set_axis_off()
 
-    ax.text(0.4, 10.55, "Proposed architecture: quality-aware multi-patch rPPG with stress estimation",
+    ax.text(0.4, 10.55, "Proposed architecture: quality-aware multi-patch rPPG for atrial fibrillation screening",
             fontsize=16, fontweight="bold", color=INK)
     ax.text(0.4, 10.12, "One ordinary RGB camera; each face patch is trusted only when its signal is reliable; "
-            "outputs are vital signs plus a stress level with a confidence", fontsize=10.5, color=INK2)
+            "outputs are vital signs, an AF screening result (primary) and a stress level (secondary), with a confidence",
+            fontsize=10.5, color=INK2)
 
     bw, bh = 2.8, 1.75
     # Row 1 - from video to per-patch pulses
@@ -126,20 +127,24 @@ def proposed_diagram(path: Path) -> None:
     arrow(ax, bottom(mc), top(hr))
     arrow(ax, bottom(hr), top(hv))
     # head pose -> motion removal, routed above row 1
-    path_arrow(ax, [top(lm, 0.75), (top(lm, 0.75)[0], 9.55), (20.42, 9.55), (20.42, mc[1] + bh * 0.5),
-                    right(mc)], color=STREAM["rgb"][0])
+    path_arrow(ax, [top(lm, 0.75), (top(lm, 0.75)[0], 9.55), (20.33, 9.55), (20.33, mc[1] + bh * 0.8),
+                    right(mc, 0.8)], color=STREAM["rgb"][0])
     ax.text(10.5, 9.63, "head pose (motion reference)", fontsize=8.5, color=STREAM["rgb"][0], ha="center", va="bottom")
 
-    # Stress estimation and output
-    sx, sw = 20.75, 2.2
-    st = box(ax, sx, 0.35, sw, 2.75, "10. Stress\nestimation", "HR, HRV,\nbreathing rate;\nconfident windows\nonly; classifier", "core",
+    # Downstream analyses and output
+    sx, sw, sh = 20.75, 2.45, 2.3
+    af = box(ax, sx, 0.35, sw, sh, "10. AF screening\n(primary)", "beat-interval irregularity\n(RMSSD, entropy,\nPoincare); confident\nwindows only", "core",
              body_size=8.0)
-    out = box(ax, sx, 4.0, sw, 5.15, "Output", "Heart rate (BPM)\nBreathing rate\nHRV (RMSSD,\nSDNN)\n\nStress level:\nlow / moderate /\nhigh\n\nConfidence, or\n\"signal\nunreliable\"",
+    st = box(ax, sx, 2.95, sw, sh, "11. Stress\n(secondary)", "HR, HRV,\nbreathing rate;\nclassifier", "core", body_size=8.0)
+    out = box(ax, 23.6, 0.35, 2.4, 8.8, "Output", "Heart rate (BPM)\nBreathing rate\nHRV (RMSSD,\nSDNN)\n\nRhythm:\nregular, or\n\"possible AF -\nsee a doctor\"\n\nStress level:\nlow / moderate /\nhigh\n\nConfidence, or\n\"signal\nunreliable\"",
               body_size=8.2)
-    arrow(ax, right(hv), left(st, 0.3))
-    arrow(ax, right(hr, 0.3), left(st, 0.85), rad=-0.15)
-    arrow(ax, right(hr, 0.8), left(out, 0.1))
-    arrow(ax, top(st), bottom(out))
+    arrow(ax, right(hv), left(af, 0.38))
+    arrow(ax, right(hr), left(st, 0.38))
+    arrow(ax, right(hv, 0.85), left(st, 0.12))
+    arrow(ax, right(af), (out[0], af[1] + sh / 2))
+    arrow(ax, right(st), (out[0], st[1] + sh / 2))
+    path_arrow(ax, [right(hr, 0.85), (20.55, hr[1] + bh * 0.85), (20.55, 6.15), (out[0], 6.15)])
+    ax.text(22.15, 6.22, "vital signs", fontsize=8.3, color=INK2, ha="center", va="bottom")
 
     # Legend
     for i, (k, label) in enumerate([("rgb", "Video and face geometry"), ("core", "Trust, fusion and analysis (ours)"),
