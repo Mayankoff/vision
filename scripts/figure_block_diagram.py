@@ -115,7 +115,7 @@ def proposed_diagram(path: Path) -> None:
     ax.text(0.4, 10.55, "Proposed architecture: quality-aware multi-patch rPPG for atrial fibrillation screening",
             fontsize=16, fontweight="bold", color=INK)
     ax.text(0.4, 10.12, "One ordinary RGB camera; each face patch is trusted only when its signal is reliable; "
-            "outputs are vital signs, an AF screening result (primary) and a stress level (secondary), with a confidence",
+            "outputs are vital signs, an AF screening result (primary) and heart-rate flags (secondary), with a confidence",
             fontsize=10.5, color=ink2())
 
     bw, bh = 2.8, 1.75
@@ -167,16 +167,18 @@ def proposed_diagram(path: Path) -> None:
 
     # Downstream analyses and output
     sx, sw, sh = 20.75, 2.45, 2.3
-    af = box(ax, sx, 0.35, sw, sh, "10. AF screening\n(primary)", "beat-interval irregularity\n(RMSSD, entropy,\nPoincare); confident\nwindows only", "core",
+    af = box(ax, sx, 0.35, sw, sh, "10. AF screening\n(primary)", "beat-interval irregularity\n(RMSSD, entropy,\nPoincare); confident\nwindows; extra beats\nexcluded", "core",
              body_size=8.0)
-    st = box(ax, sx, 2.95, sw, sh, "11. Stress\n(secondary)", "HR, HRV,\nbreathing rate;\nclassifier", "core", body_size=8.0)
-    out = box(ax, 23.6, 0.35, 2.4, 8.8, "Output", "Heart rate (BPM)\nBreathing rate\nHRV (RMSSD,\nSDNN)\n\nRhythm:\nregular, or\n\"possible AF -\nsee a doctor\"\n\nStress level:\nlow / moderate /\nhigh\n\nConfidence, or\n\"signal\nunreliable\"",
+    st = box(ax, sx, 2.95, sw, sh, "11. Heart-rate flags\n(secondary)", "slow (<50) or fast\n(>100 BPM) at rest;\nextra (premature)\nbeats", "core",
+             body_size=8.0)
+    out = box(ax, 23.6, 0.35, 2.4, 8.8, "Output", "Heart rate (BPM)\nBreathing rate\nHRV (RMSSD,\nSDNN)\n\nRhythm:\nregular, or\n\"possible AF -\nsee a doctor\"\n\nHeart rate:\nnormal / slow /\nfast; extra beats\n\nConfidence, or\n\"signal\nunreliable\"",
               body_size=8.2)
     arrow(ax, right(hv), left(af, 0.38))
     arrow(ax, right(hr), left(st, 0.38))
     arrow(ax, right(hv, 0.85), left(st, 0.12))
     arrow(ax, right(af), (out[0], af[1] + sh / 2))
     arrow(ax, right(st), (out[0], st[1] + sh / 2))
+    arrow(ax, bottom(st), top(af))  # extra beats are removed before the AF check
     path_arrow(ax, [right(hr, 0.85), (20.55, hr[1] + bh * 0.85), (20.55, 6.15), (out[0], 6.15)])
     ax.text(22.15, 6.22, "vital signs", fontsize=8.3, color=ink2(), ha="center", va="bottom",
             style="italic" if BW else "normal")

@@ -18,7 +18,7 @@ A contactless system that takes **RGB video of a face** and outputs:
 | Output | Role |
 |---|---|
 | **AF screening result**: "regular rhythm", "possible AF — see a doctor", or "signal unreliable" | **primary** real-life output (Section 3) |
-| Stress level (low / moderate / high) | secondary output, reusing the same HRV features |
+| **Heart-rate abnormality flags**: "slow heart rate", "fast heart rate" (at rest), "extra beats" | **secondary** real-life output, reusing the same heart rate and beat timings (Section 3) |
 | Heart rate (BPM), breathing rate, HRV (RMSSD, SDNN, LF/HF) | vital signs, and the inputs to the two analyses |
 | Confidence | the system says when it cannot be trusted instead of giving a wrong answer |
 
@@ -37,8 +37,10 @@ A contactless system that takes **RGB video of a face** and outputs:
 7. **Motion removal:** regress out the part of the fused pulse that follows head pose.
 8. **Breathing + heart rate:** breathing rate from the respiratory modulation of the pulse [10]; heart rate from the FFT peak, rejecting peaks at the breathing rate and its harmonics.
 9. **HRV:** beat detection gives inter-beat intervals (IBIs), then RMSSD, SDNN and LF/HF.
-10. **AF screening (primary):** rhythm-irregularity features from the IBIs (e.g. RMSSD, sample/Shannon entropy, Poincaré plot spread, turning-point ratio) go to a simple classifier. It is applied to **confident windows only**; otherwise the output is "signal unreliable".
-11. **Stress (secondary):** a classifier on HR, HRV and breathing rate gives low / moderate / high.
+10. **AF screening (primary):** rhythm-irregularity features from the IBIs (e.g. RMSSD, sample/Shannon entropy, Poincaré plot spread, turning-point ratio) go to a simple classifier. It is applied to **confident windows only**; otherwise the output is "signal unreliable". Isolated extra beats found by step 11 are excluded first, so they do not look like AF.
+11. **Heart-rate abnormalities (secondary):**
+    - **slow / fast heart rate:** resting HR below 50 BPM (bradycardia [7]) or above 100 BPM (tachycardia), flagged only when it lasts at least 2 minutes in confident windows,
+    - **extra (premature) beats:** an early beat followed by a longer pause, inside an otherwise regular rhythm [17].
 
 ---
 
@@ -68,7 +70,11 @@ The patch, trust and fusion ideas build on published work (POS [9]; skin-region 
 - **A camera-based check needs no wearable or electrodes:** it could run during telehealth calls or at a pharmacy or clinic kiosk, or as a periodic self-check at home.
 - **Honest positioning:** the value of *mass* AF screening is still debated [5][6]. The output is a **screening aid** ("possible AF — see a doctor for an ECG"), **not a diagnosis**.
 
-**Secondary output, stress:** HRV changes under psychological stress [7], and remote pulse-rate-variability features recognised stress with 85.48% accuracy on UBFC-Phys [8]. It reuses the same features at almost no extra cost.
+**Secondary output, heart-rate abnormalities:**
+- **Slow heart rate (bradycardia):** a resting rate below 50 BPM [7]. Often normal in fit people or during sleep, but it can come from a failing natural pacemaker, a conduction block, medicines or an underactive thyroid. Warning signs are dizziness, fainting and tiredness; some people need a pacemaker.
+- **Fast heart rate (tachycardia):** a resting rate above 100 BPM. Exercise, stress, caffeine and fever are normal causes; it can also come from an arrhythmia (AF itself is often fast), anaemia or an overactive thyroid.
+- **Extra (premature) beats:** very common and usually harmless; checked by a doctor only when frequent. Detecting them also helps the primary output, because they are a known cause of false AF alarms [17].
+- All three come from the heart rate and beat timings we already compute, so they need no extra hardware or training data. They are shown with context (e.g. "46 BPM: can be normal for fit people; see a doctor if you feel dizzy or faint"), as hints, not diagnoses.
 
 ---
 
@@ -79,10 +85,11 @@ The patch, trust and fusion ideas build on published work (POS [9]; skin-region 
 | **MIMIC PERform AF** [4] | contact PPG + ECG + respiration from 35 ICU patients (19 AF, 16 non-AF), 125 Hz, labelled | **build and validate the AF classifier** on real AF pulse data | public (Zenodo) |
 | **OBF** [11] | face videos with reference physiological signals from healthy subjects **and AF patients** (University of Oulu) | **test AF screening on real face videos** (the strongest possible result) | by request from the Oulu group; request early |
 | **UBFC-rPPG**, **PURE** | face videos + PPG, normal rhythm; PURE has controlled head motion | heart rate / HRV accuracy; **false-alarm rate** of AF screening on normal rhythm, with vs without gating | open download / request |
-| **UBFC-Phys** [8] | face videos + BVP, 56 subjects; rest, speech and arithmetic tasks | secondary stress output; also more normal-rhythm videos with talking (a hard case for false alarms) | IEEE DataPort |
+| **UBFC-Phys** [8] | face videos + BVP, 56 subjects; rest, speech and arithmetic tasks | more normal-rhythm videos with talking (a hard case for false alarms); raised heart rates during the tasks | IEEE DataPort |
+| **MIT-BIH Arrhythmia** [16] | ECG with every beat labelled (normal, premature atrial, premature ventricular, ...) | build and test the extra-beat detector on beat timings | public (PhysioNet) |
 | **COHFACE** [14] | face videos + PPG + respiration belt | breathing-rate accuracy | request from Idiap |
 | MMPD (optional) | mobile face videos with skin tone, motion and lighting labels | robustness by condition | request |
-| Synthetic videos | face videos with known, deliberately irregular beat timing | end-to-end test of AF detection if OBF is unavailable | generated by us |
+| Synthetic videos | face videos with known beat timing: irregular (AF-like), slow (35–50 BPM), fast (100–150 BPM), with inserted extra beats | end-to-end test of AF detection if OBF is unavailable, and of the secondary flags | generated by us |
 
 **If OBF access is not granted:** we cannot measure how often face video *catches* real AF (sensitivity). We can still show:
 1. the AF classifier works on real AF pulse data (MIMIC PERform AF),
@@ -94,8 +101,8 @@ The patch, trust and fusion ideas build on published work (POS [9]; skin-region 
 ## 5. Phases
 
 ### Phase 0: Setup and data access (week 1)
-- **Request OBF first** (decides the strength of the final result), then UBFC-Phys, COHFACE and PURE; download UBFC-rPPG and MIMIC PERform AF.
-- Reuse the existing environment setup and evaluation protocol (band 0.7–3.0 Hz, FFT HR, MAE/RMSE/MAPE/Pearson/SNR).
+- **Request OBF first** (decides the strength of the final result), then UBFC-Phys, COHFACE and PURE; download UBFC-rPPG, MIMIC PERform AF and MIT-BIH Arrhythmia.
+- Reuse the existing environment setup and evaluation protocol (FFT HR, MAE/RMSE/MAPE/Pearson/SNR). Widen the heart-rate band from 0.7–3.0 Hz (42–180 BPM) to 0.5–3.3 Hz (30–200 BPM) so slow and fast rates can be measured at all.
 - **Exit:** UBFC-rPPG and MIMIC PERform AF downloaded; data requests sent.
 
 ### Phase 1: Multi-patch core (weeks 2–3) — steps 1–7
@@ -112,7 +119,7 @@ The patch, trust and fusion ideas build on published work (POS [9]; skin-region 
   - IBI and HRV error vs ground-truth PPG on UBFC-rPPG (a published method reports RMSSD and SDNN errors of 10.5 ms and 6.15 ms [15]).
 
 ### Phase 3: AF screening (weeks 5–7) — step 10
-- Irregularity features from IBIs over 30–60 s windows; simple, explainable classifiers (logistic regression, random forest).
+- Irregularity features from IBIs over 30–60 s windows, after removing isolated extra beats (Phase 4); simple, explainable classifiers (logistic regression, random forest).
 - Train and validate on MIMIC PERform AF with **subject-independent** cross-validation (sensitivity, specificity, AUC).
 - Apply to face videos:
   - **OBF**, if available: sensitivity and specificity on real AF patients,
@@ -120,8 +127,10 @@ The patch, trust and fusion ideas build on published work (POS [9]; skin-region 
   - each with vs without confidence gating, with coverage.
 - **Exit:** a false-alarm rate on face videos that drops with gating, at acceptable coverage.
 
-### Phase 4: Stress, secondary (week 7) — step 11
-- Features: HR, HRV, breathing rate; leave-one-subject-out classification on UBFC-Phys (rest vs stress tasks); compare with the published 85.48% [8].
+### Phase 4: Heart-rate abnormalities, secondary (week 7) — step 11
+- **Slow / fast flags:** thresholds (50 and 100 BPM) on the median resting HR over at least 2 minutes of confident windows. Evaluate as agreement between the flag from our HR and the flag from the reference sensor's HR, on all face-video datasets, plus synthetic videos at 35–150 BPM (few real recordings are outside 50–100 BPM).
+- **Extra beats:** rule on the IBI pattern (an IBI clearly shorter than the local median followed by a longer one). Build and test on MIT-BIH Arrhythmia beat timings, with camera-like timing noise added (±33 ms at 30 fps), then on synthetic videos with inserted extra beats.
+- **Exit:** flag agreement on face videos; extra-beat sensitivity and precision on MIT-BIH; fewer AF false alarms on MIMIC PERform AF non-AF subjects once extra beats are removed.
 
 ### Phase 5: Evaluation and comparison (weeks 7–8)
 - **Baselines (comparison only):** POS and CHROM on a single skin region; pretrained deep models from rPPG-Toolbox (PhysNet, TS-CAN, EfficientPhys, PhysFormer). Each feeds the same AF classifier, so the comparison isolates the pulse-extraction quality.
@@ -129,7 +138,7 @@ The patch, trust and fusion ideas build on published work (POS [9]; skin-region 
 - **Efficiency:** ms/frame on a laptop CPU.
 
 ### Phase 6: Live demo (weeks 8–9)
-- Webcam: live HR, breathing rate, HRV, rhythm status, stress level and confidence, with the patch trust map drawn on the face.
+- Webcam: live HR, breathing rate, HRV, rhythm status, heart-rate flags and confidence, with the patch trust map drawn on the face.
 
 ### Phase 7: Report and presentation (weeks 9–10)
 
@@ -143,7 +152,7 @@ The patch, trust and fusion ideas build on published work (POS [9]; skin-region 
 | Beat timing / HRV | IBI error (ms); absolute error of RMSSD and SDNN (ms) |
 | Breathing rate | MAE vs respiration-belt reference (COHFACE) |
 | **AF screening** | sensitivity, specificity, AUC (MIMIC PERform AF; OBF if available); **false-alarm rate on normal-rhythm face videos**; coverage with abstention |
-| Stress (secondary) | accuracy, F1, AUC (leave-one-subject-out) |
+| Heart-rate flags (secondary) | slow/fast: agreement with the flag from the reference HR (accuracy, Cohen's kappa); extra beats: sensitivity and precision (MIT-BIH, synthetic videos) |
 | Efficiency | ms/frame on CPU |
 
 ---
@@ -157,6 +166,9 @@ The patch, trust and fusion ideas build on published work (POS [9]; skin-region 
 | AF needs accurate beat timing, which rPPG struggles with | That is what the trust checks, motion removal and gating are for; report IBI error and coverage |
 | MIMIC PERform AF is small (35 subjects) | Subject-independent cross-validation, simple models, confidence intervals |
 | Breathing from the pulse signal is weaker than from a sensor | Validate on COHFACE; use breathing only as a helper and a feature |
+| The wider heart-rate band (30–200 BPM) lets in more noise | Breathing-aware peak selection and confidence gating; slow/fast flags only after 2 minutes of confident windows |
+| Few real face videos with slow or fast heart rates, and none labelled for extra beats | Agreement with the reference-sensor flag, synthetic videos, and MIT-BIH beat timings with camera-like noise; state the limitation |
+| A slow or fast rate is often normal (fitness, exercise, caffeine) | Flag only at rest, show the reading with context, never as a diagnosis |
 | Overclaiming novelty or medical use | "To our knowledge" novelty; screening aid, not a diagnosis |
 
 ---
@@ -169,7 +181,7 @@ The patch, trust and fusion ideas build on published work (POS [9]; skin-region 
 - [4] Charlton, P. H., et al. (2022). Detecting beats in the photoplethysmogram: benchmarking open-source algorithms. *Physiological Measurement*, 43(8), 085007. (MIMIC PERform AF dataset)
 - [5] US Preventive Services Task Force (2018). Screening for atrial fibrillation with electrocardiography: final evidence summary.
 - [6] Atrial fibrillation screening review. *Circulation Research* (2020). PMC7388078.
-- [7] Kim, H.-G., Cheon, E.-J., Bai, D.-S., Lee, Y. H., & Koo, B.-H. (2018). Stress and Heart Rate Variability: A Meta-Analysis and Review of the Literature. *Psychiatry Investigation*, 15(3), 235–245.
+- [7] Kusumoto, F. M., et al. (2019). 2018 ACC/AHA/HRS Guideline on the Evaluation and Management of Patients With Bradycardia and Cardiac Conduction Delay. *Circulation*, 140(8), e382–e482.
 - [8] Meziati Sabour, R., Benezeth, Y., De Oliveira, P., Chappé, J., & Yang, F. (2021). UBFC-Phys: A Multimodal Database for Psychophysiological Studies of Social Stress. *IEEE Transactions on Affective Computing*.
 - [9] Wang, W., den Brinker, A. C., Stuijk, S., & de Haan, G. (2017). Algorithmic principles of remote PPG. *IEEE Transactions on Biomedical Engineering*, 64(7), 1479–1491.
 - [10] Karlen, W., Raman, S., Ansermino, J. M., & Dumont, G. A. (2013). Multiparameter respiratory rate estimation from the photoplethysmogram. *IEEE Transactions on Biomedical Engineering*, 60(7), 1946–1953.
@@ -178,3 +190,5 @@ The patch, trust and fusion ideas build on published work (POS [9]; skin-region 
 - [13] Cantrill, S., Ahmedt-Aristizabal, D., Petersson, L., Suominen, H., & Armin, M. A. (2024). Orientation-conditioned facial texture mapping for video-based facial remote photoplethysmography estimation. *CVPR Workshops*.
 - [14] Heusch, G., Anjos, A., & Marcel, S. (2017). A reproducible study on remote heart rate measurement. arXiv:1709.00962. (COHFACE dataset)
 - [15] Robust Heart Rate Variability Measurement from Facial Videos. PubMed Central, PMC10376629.
+- [16] Moody, G. B., & Mark, R. G. (2001). The impact of the MIT-BIH Arrhythmia Database. *IEEE Engineering in Medicine and Biology Magazine*, 20(3), 45–50.
+- [17] Chong, J. W., et al. (2015). Arrhythmia discrimination using a smart phone. *IEEE Journal of Biomedical and Health Informatics*, 19(3), 815–824.
