@@ -2,8 +2,9 @@
 
 BCSE417L Machine Vision · Mayank (23BAI0158), Vyomesh Pandita (23BAI0151)
 
-> **Status: plan only.** Nothing in this plan is built yet; building starts when the team says so.
-> Existing methods (POS, CHROM, PhysNet, …) are not part of the architecture; they are only
+> **Status:** Phases 0 and 1 are built (package `afscreen`, see README) and tested on synthetic
+> data; the Phase 1 exit check on UBFC-rPPG and PURE needs the datasets. The code from the
+> earlier project was removed. Existing methods (POS, CHROM, PhysNet, …) are not part of the architecture; they are only
 > **comparison baselines** in the evaluation. The system needs **one ordinary RGB camera**
 > (webcam or phone); no extra hardware.
 
@@ -50,7 +51,11 @@ A contactless system that takes **RGB video of a face** and outputs:
      4. effective number of trusted patches.
    - The gating threshold is chosen on validation data, at the point where beat-timing error starts to rise.
    - *Why not spectral sharpness:* an irregular rhythm has no single frequency, so a "sharp spectral peak" confidence would reject exactly the AF windows we need (tested in Phase 5).
-7. **Motion removal:** the 6 head-pose signals (yaw, pitch, roll, x, y, z) and their rates of change are band-passed like the pulse. In each window, a **ridge regression** fits the part of the fused pulse that follows head pose, and that part is subtracted.
+7. **Motion removal:** the 6 head-pose signals (yaw, pitch, roll, x, y, z) and their rates of change are band-passed like the pulse. A **ridge regression** on them is subtracted in two places:
+   - **from every patch's colour trace, before POS**, where the artifact is still linear in the motion,
+   - **from the fused pulse**, for what POS's per-window tuning made non-linear.
+
+   It only uses pose channels that clearly move in a window (rotation ≥ 1°, translation ≥ 0.5 cm RMS). Building it showed why: MediaPipe's pose estimate jitters *with the pulse* (correlation up to 0.37 on still synthetic videos), so regressing on small pose changes subtracts real pulse.
 8. **Breathing + heart rate:**
    - **Breathing rate** comes from the respiratory modulation of the pulse [10].
    - **Heart rate** comes from the FFT peak, rejecting peaks at the breathing rate and its harmonics. In irregular windows it is computed as 60 / mean beat interval instead, because the FFT peak is unreliable there.
@@ -128,12 +133,12 @@ In our literature search we did not find this combination applied to AF screenin
 
 ## 5. Phases
 
-### Phase 0: Setup and data access (week 1)
+### Phase 0: Setup and data access (week 1) — done (data requests are the team's)
 - **Request OBF first** (decides the strength of the final result), then UBFC-Phys, COHFACE and PURE; download UBFC-rPPG, MIMIC PERform AF and MIT-BIH Arrhythmia.
 - Reuse the existing environment setup and evaluation protocol (FFT HR, MAE/RMSE/MAPE/Pearson/SNR). Widen the heart-rate band from 0.7–3.0 Hz (42–180 BPM) to 0.5–3.3 Hz (30–200 BPM) so slow and fast rates can be measured at all.
 - **Exit:** UBFC-rPPG, MIMIC PERform AF and MIT-BIH downloaded; data requests sent.
 
-### Phase 1: Multi-patch core (weeks 2–3) — steps 1–7
+### Phase 1: Multi-patch core (weeks 2–3) — steps 1–7 — built; exit check waits for UBFC-rPPG / PURE
 - Patch definitions on the face mesh at three levels (25 / 12 / 6), chosen per video from face size; per-patch colour traces, orientation and brightness; head pose.
 - POS per patch; the four rhythm-independent trust checks; weighted fusion; confidence; motion removal.
 - Tests on synthetic videos with known beat timing and deliberate artifacts (flicker, shine, head motion, small faces).

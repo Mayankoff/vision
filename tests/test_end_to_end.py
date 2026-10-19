@@ -1,7 +1,7 @@
-"""End-to-end test through real MediaPipe on a synthetic pulsing face video.
+"""End-to-end through real MediaPipe on synthetic pulsing-face videos.
 
 Opt-in: needs a frontal face photo, e.g.
-    RPPG_FACE_IMAGE=path/to/face.jpg pytest -m slow
+    AFSCREEN_FACE_IMAGE=path/to/face.png pytest -m slow
 """
 
 import os
@@ -11,25 +11,35 @@ import numpy as np
 import pytest
 
 pytestmark = pytest.mark.slow
-FACE = os.environ.get("RPPG_FACE_IMAGE")
+FACE = os.environ.get("AFSCREEN_FACE_IMAGE")
 
 
-@pytest.mark.skipif(not FACE, reason="set RPPG_FACE_IMAGE to a face photo to run")
-@pytest.mark.parametrize("bpm", [62, 96])
-def test_mediapipe_pipeline_recovers_hr(bpm):
-    from make_synthetic_dataset import face_skin_mask
+@pytest.fixture(scope="module")
+def face():
+    img = cv2.cvtColor(cv2.imread(FACE), cv2.COLOR_BGR2RGB)
+    s = 400 / max(img.shape[:2])
+    img = cv2.resize(img, None, fx=s, fy=s, interpolation=cv2.INTER_AREA)
+    from afscreen.synth import skin_mask_from_photo
 
-    from rppg.face.landmarker import FaceLandmarker
-    from rppg.pipeline import estimate, extract_traces
-    from rppg.synth import synthetic_face_video
+    return img, skin_mask_from_photo(img)
 
-    face = cv2.cvtColor(cv2.imread(FACE), cv2.COLOR_BGR2RGB)
-    scale = 360 / max(face.shape[:2])
-    face = cv2.resize(face, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
-    mask = face_skin_mask(face)
-    with FaceLandmarker() as lm:
-        tr = extract_traces(synthetic_face_video(face, mask, bpm, 30.0, 15.0, seed=bpm), 30.0, lm)
+
+@pytest.mark.skipif(not FACE, reason="set AFSCREEN_FACE_IMAGE to a face photo to run")
+@pytest.mark.parametrize("rhythm", ["regular", "af"])
+def test_pipeline_recovers_heart_rate_and_beats(face, rhythm):
+    from afscreen import synth
+    from afscreen.eval.metrics import ibi_error_ms
+    from afscreen.pipeline import analyse
+    from afscreen.traces import extract
+
+    img, mask = face
+    beats = synth.regular_beats(20, 72, seed=1) if rhythm == "regular" else synth.af_beats(20, 90, seed=1)
+    tr = extract(synth.face_video(img, mask, beats, 30.0, 20.0, seed=1), 30.0)
     assert tr.detection_rate > 0.95
-    for method in ("pos", "chrom"):
-        rgb, fs = tr.signal("skin")
-        assert estimate(rgb, fs, method).hr_fft == pytest.approx(bpm, abs=1.5), method
+    r = analyse(tr, "full")
+    true_hr = 60 / np.mean(np.diff(beats))
+    assert r.hr_beats_bpm == pytest.approx(true_hr, abs=2.0)
+    if rhythm == "regular":  # an irregular rhythm has no single spectral peak
+        assert r.hr_bpm == pytest.approx(true_hr, abs=2.0)
+    assert ibi_error_ms(r.beats, beats) < 25
+    assert r.mean_confidence > 0.6

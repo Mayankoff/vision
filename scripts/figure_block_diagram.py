@@ -19,7 +19,6 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.patches import FancyArrowPatch, FancyBboxPatch  # noqa: E402
 
-from rppg.eval import plotstyle  # noqa: E402
 
 INK = "#0b0b0b"
 INK2 = "#52514e"
@@ -260,8 +259,7 @@ def main() -> None:
     args = ap.parse_args()
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    plotstyle.apply()
-    plt.rcParams["axes.grid"] = False
+    plt.rcParams.update({"font.size": 9, "figure.facecolor": "white", "savefig.facecolor": "white"})
     global BW
     for bw in (False, True):
         BW = bw

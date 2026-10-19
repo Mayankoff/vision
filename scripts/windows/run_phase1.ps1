@@ -1,24 +1,19 @@
 <#
 .SYNOPSIS
-  Phase 1: our classical pipeline on one dataset (face landmarks -> traces -> GREEN/ICA/CHROM/POS -> scores).
+  Phase 1 check: cache patch traces for a dataset, then score every variant (single region ... full method).
 .EXAMPLE
   powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\run_phase1.ps1 -Dataset ubfc
+  powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows\run_phase1.ps1 -Dataset pure -Workers 6
 #>
 param(
-    [ValidateSet("ubfc", "pure", "mmpd")][string]$Dataset = "ubfc",
+    [ValidateSet("ubfc", "pure", "synthetic")][string]$Dataset = "ubfc",
     [string]$Root = "",
-    [int]$Workers = 4,
-    [switch]$DebugVideos
+    [int]$Workers = 4
 )
 . (Join-Path $PSScriptRoot "common.ps1")
 $py = Get-OurPython
 if (-not $Root) { $Root = $DatasetDirs[$Dataset] }
-if (-not (Test-Path $Root)) { throw "Dataset folder not found: $Root (see README, 'Data')" }
-
-$extract = @("scripts/extract_traces.py", $Dataset, $Root, "--out", "cache/traces/$Dataset", "--workers", "$Workers")
-if ($DebugVideos) { $extract += @("--debug-videos", "cache/debug/$Dataset") }
-Invoke-Checked $py $extract
-Invoke-Checked $py @("scripts/run_classical.py", "cache/traces/$Dataset", "--out", "results/classical/$Dataset", "--window", "10")
-Invoke-Checked $py @("scripts/run_classical.py", "cache/traces/$Dataset", "--split", "splits/$Dataset.json", "--subset", "test",
-    "--out", "results/classical/${Dataset}_test")
-Write-Host "`nResults: results\classical\${Dataset}_summary.csv" -ForegroundColor Green
+if (-not (Test-Path $Root)) { throw "Dataset folder not found: $Root (see docs\DATA.md)" }
+Invoke-Checked $py @("-m", "afscreen.cli", "extract", $Dataset, $Root, "--out", "cache/traces/$Dataset", "--workers", "$Workers")
+Invoke-Checked $py @("-m", "afscreen.cli", "evaluate", "cache/traces/$Dataset", "--out", "results/phase1/$Dataset")
+Write-Host "`nResults: results\phase1\$Dataset\summary.md" -ForegroundColor Green

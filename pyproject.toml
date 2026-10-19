@@ -3,9 +3,9 @@ requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "rppg"
-version = "0.1.0"
-description = "Contactless heart-rate estimation from facial video (rPPG) - BCSE417L Machine Vision project"
+name = "afscreen"
+version = "0.2.0"
+description = "Quality-aware multi-patch rPPG for atrial fibrillation screening from face video - BCSE417L Machine Vision project"
 requires-python = ">=3.11"
 dependencies = [
     "numpy>=1.24",
@@ -15,17 +15,18 @@ dependencies = [
     "mediapipe>=0.10.14",
     "pandas>=2.0",
     "matplotlib>=3.7",
+    "wfdb>=4.1",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=7"]
 
 [project.scripts]
-rppg = "rppg.cli:main"
+afscreen = "afscreen.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["slow: end-to-end tests that run MediaPipe on a synthetic video"]
+markers = ["slow: end-to-end tests that run MediaPipe on synthetic face videos (need AFSCREEN_FACE_IMAGE)"]
