@@ -25,6 +25,36 @@ def hr_fft(x: np.ndarray, fs: float, band=SETTINGS.hr_band) -> float:
     return float(f[mask][np.argmax(p[mask])] * 60.0)
 
 
+def hr_fft_breathing_aware(x: np.ndarray, fs: float, breathing_bpm: float, band=SETTINGS.hr_band,
+                           tol_bpm: float = 3.0, n_candidates: int = 5, max_harmonic: int = 3) -> float:
+    """Heart rate from the largest spectral peak that is not the breathing rate or a harmonic of it.
+
+    With the band widened down to 30 BPM, slow or deep breathing (and its harmonics) can give a
+    larger peak than the pulse. Up to ``n_candidates`` peaks are tried, largest first; a peak
+    within ``tol_bpm`` of k x breathing rate (k = 1 .. ``max_harmonic``) is skipped. Higher
+    harmonics are negligible, and checking them would reject almost any heart rate (every rate
+    is near *some* multiple of the breathing rate). Falls back to the plain FFT heart rate when
+    every candidate is skipped or the breathing rate is unknown.
+    """
+    if not np.isfinite(breathing_bpm) or breathing_bpm <= 0:
+        return hr_fft(x, fs, band)
+    # Hann window: the plain zero-padded periodogram has sidelobes next to a rejected peak that
+    # would otherwise be taken as the next candidate.
+    x = np.asarray(x, dtype=np.float64)
+    nfft = max(_next_pow2(len(x)), SETTINGS.min_nfft)
+    f, p = signal.periodogram(x, fs=fs, nfft=nfft, window="hann", detrend=False)
+    m = (f >= band[0]) & (f <= band[1])
+    f, p = f[m] * 60.0, p[m]
+    idx, _ = signal.find_peaks(p, prominence=0.05 * p.max() if p.max() > 0 else None)
+    if len(idx) == 0:
+        return hr_fft(x, fs, band)
+    harmonics = breathing_bpm * np.arange(1, max_harmonic + 1)
+    for i in idx[np.argsort(p[idx])[::-1]][:n_candidates]:
+        if np.all(np.abs(f[i] - harmonics) > tol_bpm):
+            return float(f[i])
+    return hr_fft(x, fs, band)
+
+
 def peak_share(x: np.ndarray, fs: float, band=SETTINGS.hr_band, tol_bpm: float = 6.0) -> float:
     """Share of in-band power within +/- ``tol_bpm`` of the largest peak (0-1).
 

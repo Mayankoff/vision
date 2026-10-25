@@ -121,6 +121,19 @@ def cmd_hr_flags(a) -> None:
     print(f"\nwritten to {a.out}/")
 
 
+def cmd_vitals(a) -> None:
+    from afscreen.vitals import run_breathing, run_heart_rate, run_hrv, write_summary
+
+    hrv = run_hrv(a.cache_dirs, a.out) if a.cache_dirs else None
+    br = run_breathing(a.mimic, a.out) if a.mimic else None
+    hr = run_heart_rate(a.mimic, a.out) if a.mimic else None
+    write_summary(a.out, br, hr, hrv)
+    for name, df in (("HRV", hrv), ("heart rate", hr)):
+        if df is not None:
+            print(f"\n== {name}\n{df.to_string(index=False, float_format=lambda x: f'{x:.2f}')}")
+    print(f"\nwritten to {a.out}/ (tables in summary_tables.md)")
+
+
 def cmd_run(a) -> None:
     import cv2
 
@@ -211,6 +224,12 @@ def main(argv=None) -> None:
     h.add_argument("mimic")
     h.add_argument("--out", default="results/phase4/hr_flags")
     h.set_defaults(func=cmd_hr_flags)
+
+    vt = sub.add_parser("vitals", help="breathing, heart rate and HRV experiments (Phase 2)")
+    vt.add_argument("--mimic", help="MIMIC PERform folder (Testing + AF zips) for breathing and heart rate")
+    vt.add_argument("--cache-dirs", nargs="*", default=["cache/traces/ubfc_all"], help="face videos for HRV")
+    vt.add_argument("--out", default="results/phase2")
+    vt.set_defaults(func=cmd_vitals)
 
     a = ap.parse_args(argv)
     a.func(a)
