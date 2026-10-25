@@ -8,8 +8,9 @@ import numpy as np
 import pandas as pd
 
 from afscreen.eval.metrics import beat_f1, ibi_error_ms, snr_db, summarize
-from afscreen.eval.reference import reference_beats, reference_pulse
+from afscreen.eval.reference import align_reference, reference_beats, reference_pulse
 from afscreen.pipeline import VARIANTS, analyse, window_hr
+from afscreen.signal.beats import detect_beats
 from afscreen.signal.spectrum import hr_fft
 from afscreen.traces import PatchTraces
 
@@ -30,6 +31,10 @@ def score_video(tr: PatchTraces, variants=tuple(VARIANTS), level: int | None = N
     for v in variants:
         r = analyse(tr, v, level)
         ref_win = window_hr(ref, fs, r.window_t)
+        lag_s = 0.0
+        if tr.ref_beats is None:  # beats from a contact sensor: align it to the face pulse first
+            aligned, lag_s, _ = align_reference(ref, r.pulse, fs)
+            ref_beats = detect_beats(aligned, fs)
         rows.append({
             **base, "variant": v, "level": r.level, "hr_pred": r.hr_bpm, "abs_err": abs(r.hr_bpm - ref_hr),
             "hr_beats": r.hr_beats_bpm,
@@ -38,6 +43,7 @@ def score_video(tr: PatchTraces, variants=tuple(VARIANTS), level: int | None = N
             "beat_f1": beat_f1(r.beats, ref_beats),
             "snr_db": snr_db(r.pulse, fs, ref_hr),
             "confidence": r.mean_confidence,
+            "ref_lag_s": lag_s,
         })
     return rows
 

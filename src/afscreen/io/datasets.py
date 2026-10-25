@@ -87,21 +87,51 @@ def _natural_key(s: str):
     return [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", s)]
 
 
+def read_ubfc2_truth(path: str) -> tuple[np.ndarray, np.ndarray | None]:
+    """UBFC-rPPG DATASET_2 ``ground_truth.txt``: PPG, HR and time (s) on three lines; one sample per frame."""
+    with open(path) as f:
+        lines = [ln.split() for ln in f.read().strip().split("\n")]
+    bvp = np.array(lines[0], dtype=np.float64)
+    t = np.array(lines[2], dtype=np.float64) if len(lines) > 2 and len(lines[2]) == len(bvp) else None
+    return bvp, t
+
+
+def read_ubfc1_truth(path: str) -> tuple[np.ndarray, np.ndarray]:
+    """UBFC-rPPG DATASET_1 ``gtdump.xmp``: CSV rows of time (ms), HR, SpO2, PPG from a ~60 Hz oximeter.
+
+    Returns the PPG and its sample times (s). The videos have no frame timestamps, so the PPG is
+    later stretched over the video (:meth:`Recording.aligned_bvp`).
+    """
+    d = np.loadtxt(path, delimiter=",", ndmin=2)
+    return d[:, 3], (d[:, 0] - d[0, 0]) / 1000.0
+
+
 def load_ubfc(root: str) -> list[Recording]:
-    """UBFC-rPPG DATASET_2: ``ground_truth.txt`` holds PPG, HR and time (s) on three lines."""
+    """UBFC-rPPG DATASET_2: ``subject<N>/vid.avi`` + ``ground_truth.txt``."""
     recs = []
     for d in sorted(glob.glob(os.path.join(root, "subject*")), key=_natural_key):
         vid, gt_file = os.path.join(d, "vid.avi"), os.path.join(d, "ground_truth.txt")
         if not (os.path.exists(vid) and os.path.exists(gt_file)):
             continue
-        with open(gt_file) as f:
-            lines = [ln.split() for ln in f.read().strip().split("\n")]
-        bvp = np.array(lines[0], dtype=np.float64)
-        t = np.array(lines[2], dtype=np.float64) if len(lines) > 2 and len(lines[2]) == len(bvp) else None
+        bvp, t = read_ubfc2_truth(gt_file)
         name = os.path.basename(d)
         recs.append(Recording(dataset="UBFC-rPPG", id=name, subject=re.search(r"\d+", name).group(0),
                               fps=video_fps(vid), frames=lambda vid=vid: iter_video(vid), bvp=bvp,
                               bvp_t=t, frame_t=t))  # one GT sample per frame
+    return recs
+
+
+def load_ubfc1(root: str) -> list[Recording]:
+    """UBFC-rPPG DATASET_1 (the earlier, smaller set): ``<N>-gt/vid.avi`` + ``gtdump.xmp``."""
+    recs = []
+    for d in sorted(glob.glob(os.path.join(root, "*")), key=_natural_key):
+        vid, gt_file = os.path.join(d, "vid.avi"), os.path.join(d, "gtdump.xmp")
+        if not (os.path.exists(vid) and os.path.exists(gt_file)):
+            continue
+        bvp, _ = read_ubfc1_truth(gt_file)
+        name = os.path.basename(d)
+        recs.append(Recording(dataset="UBFC-rPPG-1", id=f"ubfc1_{name}", subject=f"ubfc1_{name}",
+                              fps=video_fps(vid), frames=lambda vid=vid: iter_video(vid), bvp=bvp))
     return recs
 
 
@@ -151,4 +181,4 @@ def load_synthetic(root: str) -> list[Recording]:
     return recs
 
 
-LOADERS = {"ubfc": load_ubfc, "pure": load_pure, "synthetic": load_synthetic}
+LOADERS = {"ubfc": load_ubfc, "ubfc1": load_ubfc1, "pure": load_pure, "synthetic": load_synthetic}

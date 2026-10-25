@@ -1,0 +1,25 @@
+video,variant,windows,reliable,mean_p_af,gated,ungated
+subject1,single,1,1,0.04370348072979652,regular rhythm,regular rhythm
+subject1,full,1,1,0.020459951812892993,regular rhythm,regular rhythm
+subject27,single,2,2,0.3886543489706028,regular rhythm,regular rhythm
+subject27,full,2,2,0.5063871232933732,possible AF,possible AF
+subject4,single,1,1,0.10577124958374956,regular rhythm,regular rhythm
+subject4,full,1,1,0.10988696719946715,regular rhythm,regular rhythm
+subject48,single,2,2,0.9371297477032772,possible AF,possible AF
+subject48,full,2,2,0.0652433503996004,regular rhythm,regular rhythm
+subject5,single,1,1,0.004595959595959595,regular rhythm,regular rhythm
+subject5,full,1,1,0.014666666666666666,regular rhythm,regular rhythm
+subject25,single,2,2,0.08789815932046967,regular rhythm,regular rhythm
+subject25,full,2,2,0.08674622481276892,regular rhythm,regular rhythm
+subject26,single,2,2,0.5563602110449938,possible AF,possible AF
+subject26,full,2,2,0.4544133482938629,regular rhythm,regular rhythm
+ubfc1_10-gt,single,1,1,0.03342593262001157,regular rhythm,regular rhythm
+ubfc1_10-gt,full,1,1,0.029563862672415307,regular rhythm,regular rhythm
+ubfc1_11-gt,single,2,2,0.03215629631806103,regular rhythm,regular rhythm
+ubfc1_11-gt,full,2,2,0.05460761296452086,regular rhythm,regular rhythm
+ubfc1_12-gt,single,2,2,0.07243064048095006,regular rhythm,regular rhythm
+ubfc1_12-gt,full,2,2,0.03543831780964133,regular rhythm,regular rhythm
+ubfc1_5-gt,single,2,2,0.025914819453422396,regular rhythm,regular rhythm
+ubfc1_5-gt,full,2,2,0.03689154248529248,regular rhythm,regular rhythm
+ubfc1_8-gt,single,2,2,0.0755601218956482,regular rhythm,regular rhythm
+ubfc1_8-gt,full,2,2,0.07996579407434669,regular rhythm,regular rhythm

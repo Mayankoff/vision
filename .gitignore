@@ -6,6 +6,7 @@ __pycache__/
 
 # large / generated data - never commit datasets, caches or model weights
 data/
+datasets/
 cache/
 models/*.task
 results/**/debug/

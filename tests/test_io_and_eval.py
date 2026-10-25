@@ -6,7 +6,7 @@ import numpy as np
 from afscreen import synth
 from afscreen.eval.benchmark import run, score_video
 from afscreen.eval.metrics import ibi_error_ms, summarize
-from afscreen.io.datasets import load_pure, load_ubfc
+from afscreen.io.datasets import load_pure, load_ubfc, load_ubfc1
 from afscreen.traces import PatchTraces
 
 
@@ -26,6 +26,17 @@ def test_load_ubfc(tmp_path):
     (rec,) = load_ubfc(str(tmp_path))
     assert rec.id == "subject3" and rec.subject == "3"
     assert len(list(rec.frames())) == 10
+    assert len(rec.aligned_bvp(10)) == 10
+
+
+def test_load_ubfc1(tmp_path):
+    d = tmp_path / "8-gt"
+    d.mkdir()
+    _write_video(d / "vid.avi")
+    rows = [f"{1000 + 16 * i},70,97,{i % 7}" for i in range(20)]
+    (d / "gtdump.xmp").write_text("\n".join(rows))
+    (rec,) = load_ubfc1(str(tmp_path))
+    assert rec.id == "ubfc1_8-gt" and len(rec.bvp) == 20
     assert len(rec.aligned_bvp(10)) == 10
 
 
@@ -58,6 +69,18 @@ def test_metrics():
     ref = np.arange(1, 20) * 0.8
     assert ibi_error_ms(ref + 0.01, ref) < 1e-6
     assert abs(ibi_error_ms(ref + np.tile([0, 0.02], 10)[:19], ref) - 20) < 1e-6
+
+
+def test_align_reference_undoes_delay_and_inversion():
+    from afscreen.eval.reference import align_reference
+
+    fs = 30.0
+    t = np.arange(600) / fs
+    pred = synth.pulse_from_beats(t, synth.regular_beats(20, 72, seed=3))
+    ref = -np.roll(pred, -5)  # the sensor sees the pulse 5 frames earlier, upside down
+    aligned, lag, sign = align_reference(ref, pred, fs)
+    assert sign == -1 and abs(lag - 5 / fs) < 1e-9
+    assert np.corrcoef(aligned[10:-10], pred[10:-10])[0, 1] > 0.99
 
 
 def test_benchmark_on_synthetic_traces(tmp_path):

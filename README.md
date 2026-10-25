@@ -13,9 +13,11 @@ confidence. See [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) for the plan,
 
 | Phase | State |
 |---|---|
-| 0. Setup and data access | done: package, settings, loaders (UBFC-rPPG, PURE, synthetic), [data guide](docs/DATA.md), Windows scripts. Dataset requests are the team's to send |
-| 1. Multi-patch core (steps 1–7) | built and tested on synthetic data; the exit check (beat single-region POS on UBFC-rPPG and PURE) needs the datasets |
-| 2–7 | not started |
+| 0. Setup and data access | done. Data used: **UBFC-rPPG** (partial download: 12 face videos, 7 with a reference) and **MIMIC PERform AF** (complete). PURE dropped (no time for the access request); see [data guide](docs/DATA.md) |
+| 1. Multi-patch core (steps 1–7) | built; evaluated on 7 UBFC videos with a reference ([results](results/phase1/ubfc_all/summary.md)): HR MAE 0.2 BPM for every variant, beat F1 0.98–0.99. These still, well-lit videos are too easy for the trust checks to beat the single-region baseline on HR (a tie) |
+| 3. AF screening (step 10) | built; [MIMIC results](results/phase3/mimic/summary.md): random forest, leave-one-subject-out, AUC 0.96 at a camera-like 30 fps, 19/19 AF and 14/16 non-AF subjects correct. On the 12 normal-rhythm face videos the full method gives 1/12 false alarms vs 2/12 for the single region ([results](results/phase3/face/summary.csv)) |
+| 4. Extra beats, slow / fast flags (step 11) | built; [summary](results/phase4/SUMMARY.md). MIT-BIH (tuned on DS1, tested on DS2, 16 ms camera-like timing noise): 81% of ventricular and 15% of atrial extra beats found, 86% precision. Removing extra beats nearly halves AF false alarms on MIT-BIH and brings the face videos to 0/12. Slow/fast flags agree with the ECG in 95% of 2-min MIMIC segments (kappa 0.88) |
+| 2, 5–7 | not started |
 
 The code of the earlier version of the project (classical methods, rPPG-Toolbox integration) was
 removed; it is still in the git history.
@@ -80,8 +82,15 @@ pytest -q
 ```bash
 afscreen run my_face.mp4 --debug-video trust.mp4      # one video: HR, beats, confidence; trust map video
 afscreen extract ubfc data/UBFC-rPPG --workers 4      # cache patch traces for a dataset
-afscreen evaluate cache/traces/ubfc                   # every variant vs the reference -> results/phase1/ubfc
+python scripts/extract_from_zips.py datasets/UBFC     # ... or straight from the Google Drive zip parts
+afscreen evaluate cache/traces/ubfc_all               # every variant vs the reference -> results/phase1/...
+afscreen af-train datasets/MIMIC                      # AF classifier on MIMIC PERform AF -> results/phase3/mimic
+afscreen af-screen cache/traces/ubfc_all cache/traces/noref   # AF false alarms on face videos -> results/phase3/face
+afscreen extra-beats "datasets/MIT BIH" --mimic datasets/MIMIC   # extra-beat rule + its effect on AF -> results/phase4
+afscreen hr-flags datasets/MIMIC                      # slow / fast flags vs ECG -> results/phase4/hr_flags
 ```
+
+`af-screen` removes extra beats first when `results/phase4/mitbih` exists (`--extra-beats ''` turns it off).
 
 - **Phase 1 check on Windows:** `scripts\windows\run_phase1.ps1 -Dataset ubfc` (or `-Dataset pure`).
 - **Datasets:** see [docs/DATA.md](docs/DATA.md).
