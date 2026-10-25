@@ -19,7 +19,8 @@ confidence. See [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) for the plan,
 | 4. Extra beats, slow / fast flags (step 11) | built; [summary](results/phase4/SUMMARY.md). MIT-BIH (tuned on DS1, tested on DS2, 16 ms camera-like timing noise): 81% of ventricular and 15% of atrial extra beats found, 86% precision. Removing extra beats nearly halves AF false alarms on MIT-BIH and brings the face videos to 0/12. Slow/fast flags agree with the ECG in 95% of 2-min MIMIC segments (kappa 0.88) |
 | 2. Breathing, heart rate, HRV (steps 8–9) | built; [summary](results/phase2/SUMMARY.md). Breathing from the pulse is **not reliable** on the ICU data (often right, but its mean error is worse than a constant guess), so it is not shown as an output. Beat-based heart rate in AF cuts errors over 10 BPM from 35% to 19%; breathing-aware HR does not help. On UBFC, beat-interval error is 21 ms, but the camera roughly doubles RMSSD (70 vs 39 ms) |
 | 5. Comparison, ablation, efficiency | done; [summary](results/phase5/SUMMARY.md). On the 12 healthy face videos the AF false alarms are GREEN 11, CHROM 2, POS 1, patches 0, driven by beat timing (55 / 43 / 21 ms IBI error), while HR error is ~0.2 BPM for all. Patch count and face size (down to 160x120) make no measurable difference; motion removal shows no benefit (no real head motion available); the spectral-sharpness confidence would discard 94-100% of AF windows. 10 ms/frame (96 fps) on a laptop CPU. Deep baselines not run |
-| 6–7 | not started |
+| 6. Live demo | built; [summary](results/phase6/SUMMARY.md). `afscreen live`: trust map on the face, heart rate, confidence, rhythm status with extra-beat count, RMSSD, slow/fast after 2 min. Analysis runs once a second in the background (~0.2-0.4 s). Checked on a real UBFC video and synthetic regular / AF / extra-beat videos; not yet on a webcam |
+| 7. Report and presentation | not started |
 
 The code of the earlier version of the project (classical methods, rPPG-Toolbox integration) was
 removed; it is still in the git history.
@@ -92,6 +93,7 @@ afscreen extra-beats "datasets/MIT BIH" --mimic datasets/MIMIC   # extra-beat ru
 afscreen hr-flags datasets/MIMIC                      # slow / fast flags vs ECG -> results/phase4/hr_flags
 afscreen vitals --mimic datasets/MIMIC                # breathing, heart rate, HRV -> results/phase2
 afscreen compare --video "datasets/UBFC/dataset 1/vid-003.avi"   # baselines, ablation, ms/frame -> results/phase5
+afscreen live                                         # live demo on the webcam (q: quit, r: reset)
 ```
 
 `af-screen` removes extra beats first when `results/phase4/mitbih` exists (`--extra-beats ''` turns it off).

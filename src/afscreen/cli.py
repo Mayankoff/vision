@@ -9,6 +9,7 @@
     afscreen hr-flags MIMIC_DIR                                   slow / fast flags vs ECG (Phase 4)
     afscreen vitals --mimic MIMIC_DIR                             breathing, heart rate, HRV (Phase 2)
     afscreen compare [--sizes NAME=DIRS ...] [--video V]          baselines, ablation, efficiency (Phase 5)
+    afscreen live [--video V] [--headless] [--record out.mp4]     live demo on the webcam (Phase 6)
 """
 
 from __future__ import annotations
@@ -164,6 +165,12 @@ def cmd_compare(a) -> None:
     print(f"\nwritten to {out}/")
 
 
+def cmd_live(a) -> None:
+    from afscreen.live import run
+
+    run(camera=a.camera, video=a.video, headless=a.headless, record=a.record, max_seconds=a.seconds)
+
+
 def cmd_run(a) -> None:
     import cv2
 
@@ -268,6 +275,14 @@ def main(argv=None) -> None:
     c.add_argument("--video", help="a video file for the ms/frame measurement")
     c.add_argument("--out", default="results/phase5")
     c.set_defaults(func=cmd_compare)
+
+    lv = sub.add_parser("live", help="live demo on the webcam or a video file (Phase 6)")
+    lv.add_argument("--camera", type=int, default=0)
+    lv.add_argument("--video", help="play a video file as if live instead of the webcam")
+    lv.add_argument("--headless", action="store_true", help="no window: print status lines")
+    lv.add_argument("--record", help="save the annotated video (mp4)")
+    lv.add_argument("--seconds", type=float, help="stop after this many seconds")
+    lv.set_defaults(func=cmd_live)
 
     a = ap.parse_args(argv)
     a.func(a)
