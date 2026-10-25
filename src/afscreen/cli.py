@@ -7,6 +7,8 @@
     afscreen af-screen CACHE_DIR ... [--out DIR]                  AF false-alarm rate on normal-rhythm face videos
     afscreen extra-beats MITBIH_DIR [--mimic DIR]                 extra-beat rule on MIT-BIH (Phase 4)
     afscreen hr-flags MIMIC_DIR                                   slow / fast flags vs ECG (Phase 4)
+    afscreen vitals --mimic MIMIC_DIR                             breathing, heart rate, HRV (Phase 2)
+    afscreen compare [--sizes NAME=DIRS ...] [--video V]          baselines, ablation, efficiency (Phase 5)
 """
 
 from __future__ import annotations
@@ -134,6 +136,34 @@ def cmd_vitals(a) -> None:
     print(f"\nwritten to {a.out}/ (tables in summary_tables.md)")
 
 
+def cmd_compare(a) -> None:
+    import os
+    import platform
+
+    import pandas as pd
+
+    from afscreen.eval.phase5 import ablation, efficiency, patch_count
+
+    out = Path(a.out)
+    out.mkdir(parents=True, exist_ok=True)
+    per, summ = ablation(a.ref_dirs, a.ref_dirs + a.noref_dirs)
+    per.to_csv(out / "ablation_per_video.csv", index=False)
+    summ.to_csv(out / "ablation.csv", index=False)
+    print(summ.to_string(index=False, float_format=lambda x: f"{x:.2f}"))
+    if a.sizes:
+        sizes = {"native": a.ref_dirs, **{s.split("=")[0]: s.split("=")[1].split(",") for s in a.sizes}}
+        pc = patch_count(sizes)
+        pc.to_csv(out / "patch_count_per_video.csv", index=False)
+        print(pc.groupby(["frame_size", "level"], sort=False)[["abs_err", "ibi_err_ms", "rmssd_err_ms"]].mean()
+              .to_string(float_format=lambda x: f"{x:.2f}"))
+    if a.video:
+        eff = pd.DataFrame([efficiency(a.video, 300, ms) for ms in (None, 320)])
+        eff["cpu"], eff["cores"] = platform.processor(), os.cpu_count()
+        eff.to_csv(out / "efficiency.csv", index=False)
+        print(eff.to_string(index=False, float_format=lambda x: f"{x:.2f}"))
+    print(f"\nwritten to {out}/")
+
+
 def cmd_run(a) -> None:
     import cv2
 
@@ -230,6 +260,14 @@ def main(argv=None) -> None:
     vt.add_argument("--cache-dirs", nargs="*", default=["cache/traces/ubfc_all"], help="face videos for HRV")
     vt.add_argument("--out", default="results/phase2")
     vt.set_defaults(func=cmd_vitals)
+
+    c = sub.add_parser("compare", help="baselines, ablation, patch count and efficiency (Phase 5)")
+    c.add_argument("--ref-dirs", nargs="+", default=["cache/traces/ubfc_all"], help="videos with a reference")
+    c.add_argument("--noref-dirs", nargs="*", default=["cache/traces/noref"], help="extra normal-rhythm videos")
+    c.add_argument("--sizes", nargs="*", default=[], help="smaller-face caches as NAME=dir1,dir2")
+    c.add_argument("--video", help="a video file for the ms/frame measurement")
+    c.add_argument("--out", default="results/phase5")
+    c.set_defaults(func=cmd_compare)
 
     a = ap.parse_args(argv)
     a.func(a)

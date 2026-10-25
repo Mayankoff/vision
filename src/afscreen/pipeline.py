@@ -35,6 +35,12 @@ VARIANTS: dict[str, tuple[str, FusionConfig]] = {
     "+beats": ("auto", FusionConfig(use_motion=False)),
     "full": ("auto", FusionConfig()),
 }
+# Comparison baselines (Phase 5): other pulse-extraction methods on one skin region.
+BASELINES: dict[str, tuple[str, FusionConfig]] = {
+    "single_green": ("single", FusionConfig(**_OFF, pulse="green")),
+    "single_chrom": ("single", FusionConfig(**_OFF, pulse="chrom")),
+}
+ALL_VARIANTS = {**BASELINES, **VARIANTS}
 
 
 @dataclass
@@ -98,7 +104,7 @@ def analyse(traces: PatchTraces, variant: str = "full", level: int | None = None
 
     ``level`` forces a patch level (25, 12, 6); by default it is chosen from the face size.
     """
-    mode, cfg = VARIANTS[variant]
+    mode, cfg = ALL_VARIANTS[variant]
     lvl = 1 if mode == "single" else (level or choose_level(traces.counts, s.min_patch_pixels))
     rgb, _, facing = traces.at_level(lvl)
     fr = fuse(rgb, traces.fps, facing, traces.pose, cfg, s)

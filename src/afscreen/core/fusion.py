@@ -34,6 +34,7 @@ class FusionConfig:
     use_consistency: bool = True
     use_beats: bool = True
     use_motion: bool = True
+    pulse: str = "pos"  # pulse extraction per patch: "pos" (the method) or a baseline ("chrom", "green")
 
 
 @dataclass
@@ -46,12 +47,20 @@ class FusionResult:
     patch_pulses: np.ndarray  # (T, P) cleaned POS pulse of every patch
 
 
-def patch_pulses(rgb: np.ndarray, fs: float, valid: np.ndarray, s: Settings = SETTINGS) -> np.ndarray:
-    """Cleaned (detrended, band-passed) POS pulse of every valid patch; zeros for the others."""
+def patch_pulses(rgb: np.ndarray, fs: float, valid: np.ndarray, s: Settings = SETTINGS,
+                 method: str = "pos") -> np.ndarray:
+    """Cleaned (detrended, band-passed) pulse of every valid patch; zeros for the others.
+
+    ``method`` is POS (the proposed method) or a comparison baseline from signal/baselines.py.
+    """
+    from afscreen.signal.baselines import PULSE_METHODS
+
+    extract = pos if method == "pos" else PULSE_METHODS[method]
     n, n_p, _ = rgb.shape
     out = np.zeros((n, n_p))
     for k in np.flatnonzero(valid):
-        out[:, k] = bandpass(detrend(pos(fill_gaps(rgb[:, k]), fs, s.pos_window_s), s.detrend_lambda), fs, s.hr_band)
+        out[:, k] = bandpass(detrend(extract(fill_gaps(rgb[:, k]), fs, s.pos_window_s), s.detrend_lambda), fs,
+                             s.hr_band)
     return out
 
 
@@ -156,7 +165,7 @@ def fuse(rgb: np.ndarray, fs: float, facing: np.ndarray | None = None, pose: np.
     motion = motion_regressors(pose, fs, s) if cfg.use_motion else None
     if motion is not None and motion.active.any():
         rgb = remove_motion_from_colour(rgb, valid, motion, fs, s)
-    pulses = patch_pulses(rgb, fs, valid, s)
+    pulses = patch_pulses(rgb, fs, valid, s, cfg.pulse)
     lum = fill_gaps(np.where(valid[None, :], luma(rgb), 128.0)) if cfg.use_brightness else None
     face = None
     if cfg.use_facing and facing is not None and np.isfinite(facing[:, valid]).any():
